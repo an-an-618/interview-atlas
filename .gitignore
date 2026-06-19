@@ -1,0 +1,40 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+
+# User data
+data/
+uploads/
+recordings/
+transcripts/
+resumes/
+*.sqlite
+*.sqlite3
+*.db
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+.next/
+.turbo/
+target/
+
+# Tooling and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+*.tmp
+
+# Local AI and agent state
+.codex/
+.agents/
