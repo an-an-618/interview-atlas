@@ -20,6 +20,8 @@ Start each substantial change from an issue with explicit acceptance criteria. U
 
 Open a pull request before merging into `main`. The pull request must explain the intent, affected decisions, validation performed, privacy impact, and screenshots when UI work exists. Important milestones receive an annotated Git tag.
 
+Codex Cloud and both local computers use GitHub as the shared engineering state. Before starting work, read the linked issue, this file, and `docs/engineering/CODEX_CLOUD_WORKFLOW.md`. Before stopping unfinished work, push the branch and update the draft pull request with completed work, remaining work, validation, risks, and the exact next action. Never leave the only copy of useful work or context in a local Codex conversation.
+
 ## Documentation and decisions
 
 Write user-facing product material in clear Simplified Chinese, with an English summary when it helps open-source contributors. Record durable technical choices as ADRs, including context, decision, alternatives, consequences, and status. Do not silently convert assumptions into requirements.
