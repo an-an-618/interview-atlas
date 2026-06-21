@@ -1,0 +1,72 @@
+name: Codex Cloud task
+description: Define an implementation task that can be handed to Codex Cloud or another computer
+title: "[Task]: "
+labels:
+  - codex-cloud
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is the complete execution brief. The assigned agent must not need access to a private local conversation.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What user-visible or engineering result must be achieved?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Required context
+      description: Summarize the approved Feishu requirements and link the source document.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: In scope
+      description: List the work included in this task.
+    validations:
+      required: true
+  - type: textarea
+    id: exclusions
+    attributes:
+      label: Out of scope
+      description: List work the agent must not add.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Use observable, testable conditions.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Required validation
+      description: Commands, tests, screenshots, or manual checks required before handoff.
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Data and security constraints
+      description: State rules for credentials, local data, AI calls, logs, and fictional test data.
+    validations:
+      required: true
+  - type: textarea
+    id: handoff
+    attributes:
+      label: Handoff requirement
+      value: |
+        Create or update a Draft PR. In the PR record:
+        - completed work;
+        - remaining work;
+        - tests and results;
+        - known risks;
+        - the exact next action.
+    validations:
+      required: true
