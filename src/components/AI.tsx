@@ -756,7 +756,7 @@ export function InterviewImportDialog({
                 <span>
                   点击 AI 提取时，原文先保存到本地，再直接发送到你配置的
                   <code>{configured ? config.endpoint : " AI 服务"}</code>
-                  ；不会经过千面服务器。
+                  ；不会经过千面服务器。AI 结果格式异常或不完整时，会自动重新提取一次。
                 </span>
               </div>
               {error ? (
@@ -787,6 +787,7 @@ export function InterviewImportDialog({
                   ? error
                   : "正在识别候选问题、实例回答，并匹配已有同步块。"}
               </p>
+              {error ? <p>原文草稿已保存在本地，可以稍后从面试记录重新拆解。</p> : null}
               {!error ? (
                 <>
                   <div className="import-progress">

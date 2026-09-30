@@ -23,6 +23,12 @@ const config: AIProviderConfig = {
   model: "test-model",
 };
 
+function completion(content: string | null, finishReason = "stop") {
+  return new Response(JSON.stringify({
+    choices: [{ finish_reason: finishReason, message: { content } }],
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
 const interview: Interview = {
   id: "interview-1",
   company: "示例公司",
@@ -146,6 +152,113 @@ describe("OpenAI-compatible client", () => {
     expect(() =>
       parseExtractionResponse('{"answer":"missing questions"}', new Set()),
     ).toThrow("缺少问题列表");
+  });
+
+  it("ignores reasoning and prose wrappers without altering answer text", () => {
+    const content = JSON.stringify({
+      questions: [{
+        title: "如何处理 JSON？",
+        answer: '保留 {"key":"value"}、换行\n和路径 C:\\temp。',
+      }],
+    });
+    const result = parseExtractionResponse(
+      `<think>草稿 {"draft":true}</think>\n说明 {示例}\n\`\`\`json\n${content}\n\`\`\`\n结束 {说明}`,
+      new Set(),
+    );
+    expect(result[0]?.answer).toBe('保留 {"key":"value"}、换行\n和路径 C:\\temp。');
+    expect(() => parseExtractionResponse(
+      '{"questions":[{"title":"已完成一题"},{"title":"截断',
+      new Set(),
+    )).toThrow("结构化数据");
+  });
+
+  it.each([
+    "以下是面试问题：如何减少首屏时间？",
+    '{"questions":[{"title":"未完成',
+    '{"answer":"缺少列表"}',
+  ])("retries malformed extraction once using only the original evidence: %s", async (invalid) => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(completion(invalid))
+      .mockResolvedValueOnce(completion('{"questions":[{"title":"如何减少首屏时间？"}]}'));
+    const client = createOpenAICompatibleClient(fetchMock);
+    const result = await client.extractInterview(config, "key", { interview, syncBlocks: [] });
+    expect(result[0]?.title).toBe("如何减少首屏时间？");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const bodies = fetchMock.mock.calls.map((call) => JSON.parse(call[1].body));
+    expect(bodies[0].response_format).toEqual({ type: "json_object" });
+    expect(bodies[1].messages[1]).toEqual(bodies[0].messages[1]);
+    expect(bodies[1].messages).toHaveLength(2);
+  });
+
+  it.each([null, '{"questions":[]}'])("retries length-limited output with more room: %s", async (content) => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(completion(content, "length"))
+      .mockResolvedValueOnce(completion('{"questions":[]}'));
+    const client = createOpenAICompatibleClient(fetchMock);
+    await expect(client.extractInterview(config, "", { interview, syncBlocks: [] }))
+      .resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body).max_tokens).toBe(8_000);
+    expect(JSON.parse(fetchMock.mock.calls[1]![1].body).max_tokens).toBe(16_000);
+  });
+
+  it.each([
+    ["not json", "stop", "结构化数据"],
+    ['{"questions":[]}', "length", "输出长度上限"],
+  ])("stops after one unsuccessful regeneration", async (content, finishReason, error) => {
+    const fetchMock = vi.fn(async () => completion(content, finishReason));
+    const client = createOpenAICompatibleClient(fetchMock);
+    await expect(client.extractInterview(config, "", { interview, syncBlocks: [] }))
+      .rejects.toThrow(error);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back only when the provider explicitly rejects JSON mode", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: { message: "response_format json_object is not supported" },
+      }), { status: 400 }))
+      .mockResolvedValueOnce(completion('{"questions":[]}'));
+    const client = createOpenAICompatibleClient(fetchMock);
+    await expect(client.extractInterview(config, "", { interview, syncBlocks: [] }))
+      .resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const first = JSON.parse(fetchMock.mock.calls[0]![1].body);
+    const second = JSON.parse(fetchMock.mock.calls[1]![1].body);
+    expect(first.response_format).toEqual({ type: "json_object" });
+    expect(second).not.toHaveProperty("response_format");
+    expect(second.messages).toEqual(first.messages);
+  });
+
+  it.each([400, 401, 429, 500])("does not retry HTTP %s extraction errors", async (status) => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      error: { message: "Other request error" },
+    }), { status }));
+    const client = createOpenAICompatibleClient(fetchMock);
+    await expect(client.extractInterview(config, "", { interview, syncBlocks: [] }))
+      .rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry filtered responses", async () => {
+    const fetchMock = vi.fn(async () => completion(null, "content_filter"));
+    const client = createOpenAICompatibleClient(fetchMock);
+    await expect(client.extractInterview(config, "", { interview, syncBlocks: [] }))
+      .rejects.toThrow("拒绝生成");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry after cancellation during an invalid response", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async () => {
+      controller.abort();
+      return completion("invalid");
+    });
+    const client = createOpenAICompatibleClient(fetchMock);
+    await expect(client.extractInterview(
+      config, "", { interview, syncBlocks: [] }, controller.signal,
+    )).rejects.toThrow("已取消");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("injects target fields and prioritizes same-company interview context", () => {

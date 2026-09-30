@@ -53,6 +53,7 @@ export const INTERVIEW_EXTRACTION_SYSTEM_PROMPT = [
   "",
   "六、输出与自检",
   '只返回 JSON 对象：{"questions":[{"title":"","answer":"","tags":[],"sourceExcerpt":"","suggestedSyncBlockId":null,"matchReason":""}]}。',
+  `最多输出 ${MAX_CANDIDATES} 个候选。必须输出完整的 JSON；字符串内的双引号、换行和反斜杠必须按 JSON 规则转义。sourceExcerpt 不超过 1000 字，避免重复引用整段回答。`,
   "不要返回 Markdown、解释或额外字段。输出前逐题确认：标题有原文依据；answer 没有补写；标签符合规则；同步块建议达到高置信阈值。没有可确认问题时返回 {\"questions\":[]}。",
 ].join("\n");
 
@@ -74,6 +75,16 @@ export const MOCK_INTERVIEW_REPORT_SYSTEM_PROMPT = [
 ].join("\n");
 
 type JsonRecord = Record<string, unknown>;
+
+class StructuredOutputError extends Error {
+  constructor(
+    message: string,
+    readonly kind: "format" | "length" = "format",
+  ) {
+    super(message);
+    this.name = "StructuredOutputError";
+  }
+}
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -124,6 +135,19 @@ function extractMessageContent(payload: unknown): string {
     throw new Error("AI 服务没有返回有效消息。");
   }
 
+  if (firstChoice.finish_reason === "length") {
+    throw new StructuredOutputError(
+      "AI 返回内容达到输出长度上限，结果不完整。请将面经分段后重新拆解。",
+      "length",
+    );
+  }
+  if (
+    firstChoice.finish_reason === "content_filter" ||
+    firstChoice.message.refusal
+  ) {
+    throw new Error("AI 服务拒绝生成这次结果，请检查原文或更换模型后重试。");
+  }
+
   const content = firstChoice.message.content;
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -137,24 +161,30 @@ function extractMessageContent(payload: unknown): string {
 }
 
 function parseJsonObject(content: string): JsonRecord {
-  const withoutFence = content
+  const text = content
     .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/, "");
-  const start = withoutFence.indexOf("{");
-  const end = withoutFence.lastIndexOf("}");
+    .replace(/^(?:<think>[\s\S]*?<\/think>\s*)+/i, "");
+  const fences = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)];
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  // Strip wrappers only; never invent missing fields or accept a partial JSON.
+  const candidates = [
+    text,
+    ...(fences.length === 1 ? [fences[0]![1]!] : []),
+    ...(start >= 0 && end > start ? [text.slice(start, end + 1)] : []),
+  ];
 
-  if (start < 0 || end <= start) {
-    throw new Error("AI 结果不是有效的结构化数据，请重试。");
+  for (const candidate of candidates) {
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      if (isRecord(parsed)) return parsed;
+    } catch {
+      // Try the next wrapper without changing the model's content.
+    }
   }
-
-  try {
-    const parsed: unknown = JSON.parse(withoutFence.slice(start, end + 1));
-    if (!isRecord(parsed)) throw new Error();
-    return parsed;
-  } catch {
-    throw new Error("AI 结果不是有效的结构化数据，请重试。");
-  }
+  throw new StructuredOutputError(
+    "AI 返回的结构化数据格式有误，暂时无法拆解。请重试或更换模型。",
+  );
 }
 
 export function parseExtractionResponse(
@@ -163,7 +193,7 @@ export function parseExtractionResponse(
 ): AIExtractionCandidate[] {
   const parsed = parseJsonObject(content);
   if (!Array.isArray(parsed.questions)) {
-    throw new Error("AI 结果缺少问题列表，请重试。");
+    throw new StructuredOutputError("AI 结果缺少问题列表，请重试或更换模型。");
   }
 
   const candidates = parsed.questions
@@ -200,7 +230,7 @@ export function parseExtractionResponse(
     .filter((item) => item.title);
 
   if (parsed.questions.length && !candidates.length) {
-    throw new Error("AI 结果中没有可用的问题，请重试。");
+    throw new StructuredOutputError("AI 结果中没有可用的问题，请重试或更换模型。");
   }
 
   return candidates;
@@ -471,6 +501,21 @@ function isKimiK3(config: AIProviderConfig): boolean {
   }
 }
 
+async function rejectsJsonMode(response: Response): Promise<boolean> {
+  if (response.status !== 400 && response.status !== 422) return false;
+  try {
+    const payload: unknown = await response.clone().json();
+    if (!isRecord(payload) || !isRecord(payload.error)) return false;
+    const message = limitedString(payload.error.message, 1_000);
+    return (
+      /response_format|json_object/i.test(message) &&
+      /not supported|unsupported|does not support|not support|not allowed|unknown|unrecognized|unexpected|不支持/i.test(message)
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function requestCompletion(
   fetchImpl: typeof fetch,
   config: AIProviderConfig,
@@ -497,24 +542,28 @@ async function requestCompletion(
   }, timeoutMs);
 
   try {
+    if (controller.signal.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
     const kimiK3 = isKimiK3(config);
     const body: Record<string, unknown> = {
       model: config.model.trim(),
       messages,
+      ...(structuredOutput
+        ? { response_format: { type: "json_object" } }
+        : {}),
       ...(kimiK3
         ? {
             reasoning_effort: "low",
             max_completion_tokens: maxTokens,
-            ...(structuredOutput
-              ? { response_format: { type: "json_object" } }
-              : {}),
           }
         : {
             temperature: 0.1,
             max_tokens: maxTokens,
           }),
     };
-    const response = await fetchImpl(resolveChatCompletionsUrl(config.endpoint), {
+    const url = resolveChatCompletionsUrl(config.endpoint);
+    const send = () => fetchImpl(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -525,9 +574,22 @@ async function requestCompletion(
       body: JSON.stringify(body),
       signal: controller.signal,
     });
+    let response = await send();
+    // Some compatible providers only support JSON instructions in the prompt.
+    if (structuredOutput && await rejectsJsonMode(response)) {
+      if (controller.signal.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+      delete body.response_format;
+      response = await send();
+    }
 
     if (!response.ok) throw await providerError(response);
-    return extractMessageContent(await response.json());
+    const payload: unknown = await response.json();
+    if (controller.signal.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+    return extractMessageContent(payload);
   } catch (reason) {
     if (reason instanceof Error && reason.name === "AbortError") {
       throw new Error(timedOut ? "AI 请求超时，请重试。" : "AI 请求已取消。");
@@ -632,20 +694,27 @@ export function createOpenAICompatibleClient(
       );
     },
     async extractInterview(config, apiKey, input, signal) {
-      const content = await requestCompletion(
-        fetchImpl,
-        config,
-        apiKey,
-        extractionMessages(input),
-        signal,
-        60_000,
-        8_000,
-        true,
-      );
-      return parseExtractionResponse(
-        content,
-        new Set(input.syncBlocks.map((block) => block.id)),
-      );
+      const messages = extractionMessages(input);
+      const allowedIds = new Set(input.syncBlocks.map((block) => block.id));
+      let maxTokens = 8_000;
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          const content = await requestCompletion(
+            fetchImpl, config, apiKey, messages, signal,
+            90_000, maxTokens, true,
+          );
+          return parseExtractionResponse(content, allowedIds);
+        } catch (reason) {
+          if (!(reason instanceof StructuredOutputError) || attempt >= 1) {
+            throw reason;
+          }
+          if (signal?.aborted) throw new Error("AI 请求已取消。");
+          if (reason.kind === "length") maxTokens = 16_000;
+          // Retry within this user action, using the original evidence only.
+          messages[0]!.content +=
+            "\n上次结果格式有误或不完整。请重新从原文提取，只输出完整且严格有效的 JSON 对象，不要输出思考过程或解释。";
+        }
+      }
     },
     async continueMockInterview(config, apiKey, input, signal) {
       const messages = mockInterviewMessages(input);

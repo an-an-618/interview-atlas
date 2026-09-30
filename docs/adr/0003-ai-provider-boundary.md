@@ -45,6 +45,10 @@ Every content-bearing request requires an explicit user action. Before the first
 
 AI output remains transient until the user edits and confirms selected candidates. The first version does not automatically create relationships, overwrite answers, merge synchronized blocks, or retry in the background.
 
+Within an active, user-initiated extraction, malformed or length-limited output may trigger one regeneration using the original evidence and the same provider. A length-limited response increases the output budget from 8,000 to 16,000 tokens for that retry. Closing or cancelling the operation stops further requests. HTTP, network, timeout, and refusal errors do not trigger regeneration. The import dialog discloses this retry; no failed model output is stored or included in the next prompt.
+
+Structured requests use JSON mode. If a provider explicitly rejects `response_format` / `json_object` as unsupported (HTTP 400 or 422), the adapter may resend that request once without this optional parameter, retaining the JSON instructions. Partial JSON is rejected rather than repaired into apparently complete results.
+
 ### Data minimization
 
 Interview extraction sends the selected interview and only truncated synchronized-block context required for match suggestions. It does not send the complete workspace.
