@@ -12,6 +12,8 @@
     "desktop": "tauri",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build --bundles app && bash scripts/create-macos-dmg.sh",
+    "desktop:build:macos": "npm run desktop:build",
+    "desktop:build:windows": "tauri build --bundles nsis,msi",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:watch": "vitest"
