@@ -2,7 +2,7 @@
 
 > 把散落的面经整理成可回溯、可复用、可持续修订的个人面试知识库。
 
-[English](README.md) · [产品上下文](docs/product/product-context.md) · [一期 PRD](docs/product/prd-v1.md) · [架构决策](docs/adr/README.md)
+[English](README.md) · [下载安装](https://github.com/an-an-618/interview-atlas/releases) · [产品上下文](docs/product/product-context.md) · [一期 PRD](docs/product/prd-v1.md) · [架构决策](docs/adr/README.md)
 
 [![CI](https://github.com/an-an-618/interview-atlas/actions/workflows/ci.yml/badge.svg)](https://github.com/an-an-618/interview-atlas/actions/workflows/ci.yml)
 ![React](https://img.shields.io/badge/React-19.3-149ECA)
@@ -42,6 +42,23 @@
 - **默认本地保存。** 工作区保存在 IndexedDB，只有用户主动导出才会离开浏览器。
 - **AI 请求必须显式触发。** 仅将当前任务需要的内容直连发送给用户配置的服务商。
 - **无 AI 也能完整使用。** 手动整理、关联、复习和导出流程保持可用。
+
+## macOS 下载安装
+
+当前桌面预览版支持 Apple Silicon Mac，系统要求为 macOS 13 及以上。
+
+1. 打开 [GitHub Releases](https://github.com/an-an-618/interview-atlas/releases)，下载最新的 `Interview-Atlas_<版本>_aarch64.dmg` 和 `SHA256SUMS.txt`。
+2. 打开 DMG，将“千面.app”拖到“Applications”快捷入口。
+3. 当前预览版尚未经过 Apple 公证。首次启动时，在 Finder 中右键“千面.app”，选择“打开”，再确认一次“打开”。必要时前往“系统设置 → 隐私与安全性 → 仍要打开”。
+4. 后续可从“应用程序”、Spotlight、启动台或 Dock 打开千面。
+
+不要关闭系统级 Gatekeeper。可在下载目录执行以下命令校验安装包：
+
+```bash
+shasum -a 256 -c SHA256SUMS.txt
+```
+
+桌面版与浏览器版使用独立的 IndexedDB 工作区，浏览器数据不会自动迁移。维护者构建、正式签名与 Apple 公证流程见 [macOS 构建与发布](docs/engineering/macos-distribution.md)。
 
 ## 本地运行
 
