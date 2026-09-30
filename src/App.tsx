@@ -2653,15 +2653,19 @@ export default function App() {
   const [mobileKnowledgeMenuOpen, setMobileKnowledgeMenuOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [dailyQuestionId, setDailyQuestionId] = useState<string | null>(null);
-  const hasSelectedOverviewQuestion = useRef(false);
 
   useLayoutEffect(() => {
-    if (loading || hasSelectedOverviewQuestion.current) return;
+    if (
+      loading ||
+      (dailyQuestionId &&
+        workspace.questions.some((question) => question.id === dailyQuestionId))
+    ) {
+      return;
+    }
 
-    hasSelectedOverviewQuestion.current = true;
     const question = getRandomQuestion(workspace.questions);
     setDailyQuestionId(question?.id ?? null);
-  }, [loading, workspace.questions]);
+  }, [dailyQuestionId, loading, workspace.questions]);
 
   useEffect(() => {
     if (!mobileKnowledgeMenuOpen) return;
