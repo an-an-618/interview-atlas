@@ -6,22 +6,30 @@ import {
 } from "../data/repository";
 import type {
   CreateInterviewInput,
+  CreateMockInterviewInput,
   CreateQuestionInput,
   CreateResumeExperienceInput,
   CreateSyncBlockInput,
+  MockInterviewFeedback,
+  MockInterviewMessageRole,
+  MockInterviewQuestionInput,
   SaveAIReviewCandidateInput,
   UpdateAIReviewCandidateInput,
   Workspace,
 } from "../domain/types";
 import {
   addInterview,
+  addMockInterview,
   addQuestion,
   addResumeExperience,
   addStandaloneQuestion,
   addSyncBlock,
+  appendMockInterviewMessage,
+  applyMockInterviewAnalysis,
   completeInterviewAIReview,
   deleteResumeExperience,
   emptyWorkspace,
+  endMockInterview,
   linkQuestionToSyncBlock,
   resolveAIReviewCandidate,
   resolveAllAIReviewCandidates,
@@ -41,16 +49,31 @@ export function useWorkspace(
   const workspaceRef = useRef(workspace);
   const saveQueue = useRef(Promise.resolve());
 
-  const replaceWorkspace = (next: Workspace) => {
+  const replaceWorkspace = (next: Workspace): void => {
     workspaceRef.current = next;
     setWorkspace(next);
-    saveQueue.current = saveQueue.current
-      .then(() => repository.save(next))
-      .catch((reason: unknown) => {
-        setError(
-          reason instanceof Error ? reason.message : "本地保存失败，请重试。",
-        );
-      });
+    const operation = saveQueue.current.then(() => repository.save(next));
+    saveQueue.current = operation.catch((reason: unknown) => {
+      setError(
+        reason instanceof Error ? reason.message : "本地保存失败，请重试。",
+      );
+    });
+  };
+
+  const persistBeforeCommit = async (
+    next: Workspace,
+    fallbackMessage = "本地保存失败，请重试。",
+  ): Promise<void> => {
+    await saveQueue.current;
+    const operation = repository.save(next);
+    saveQueue.current = operation.catch((reason: unknown) => {
+      setError(
+        reason instanceof Error ? reason.message : fallbackMessage,
+      );
+    });
+    await operation;
+    workspaceRef.current = next;
+    setWorkspace(next);
   };
 
   useEffect(() => {
@@ -86,6 +109,53 @@ export function useWorkspace(
       const result = addInterview(workspaceRef.current, input);
       replaceWorkspace(result.workspace);
       return result.interview;
+    },
+    createMockInterview: async (input: CreateMockInterviewInput) => {
+      const result = addMockInterview(workspaceRef.current, input);
+      await persistBeforeCommit(result.workspace);
+      return result.session;
+    },
+    appendMockInterviewMessage: async (
+      sessionId: string,
+      role: MockInterviewMessageRole,
+      content: string,
+    ) => {
+      const result = appendMockInterviewMessage(
+        workspaceRef.current,
+        sessionId,
+        role,
+        content,
+      );
+      await persistBeforeCommit(result.workspace);
+      return result.session;
+    },
+    endMockInterview: async (
+      sessionId: string,
+      endedBy: "ai" | "user",
+      endReason: string,
+    ) => {
+      const result = endMockInterview(
+        workspaceRef.current,
+        sessionId,
+        endedBy,
+        endReason,
+      );
+      await persistBeforeCommit(result.workspace);
+      return result;
+    },
+    applyMockInterviewAnalysis: async (
+      sessionId: string,
+      feedback: MockInterviewFeedback,
+      questions: MockInterviewQuestionInput[],
+    ) => {
+      const result = applyMockInterviewAnalysis(
+        workspaceRef.current,
+        sessionId,
+        feedback,
+        questions,
+      );
+      await persistBeforeCommit(result.workspace);
+      return result.session;
     },
     updateInterview: (interviewId: string, input: CreateInterviewInput) => {
       const result = updateInterview(
@@ -211,6 +281,8 @@ export function useWorkspace(
     },
     loadDemo: () => replaceWorkspace(createDemoWorkspace()),
     clear: () => replaceWorkspace(emptyWorkspace()),
+    restoreWorkspace: (next: Workspace) =>
+      persistBeforeCommit(next, "本地恢复失败，请重试。"),
     exportWorkspace: () => repository.export(workspaceRef.current),
   };
 }

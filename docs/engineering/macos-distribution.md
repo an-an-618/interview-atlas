@@ -66,9 +66,9 @@ src-tauri/target/release/bundle/dmg/Interview-Atlas_<version>_<architecture>.dmg
 ## 数据边界
 
 - 桌面应用继续使用 IndexedDB，但其 WebView 工作区与 Chrome、Safari 等浏览器相互独立。
-- 当前浏览器数据不会自动迁移到桌面应用。
+- 浏览器数据不会自动同步到桌面应用；可通过“导出 JSON → 设置页迁移”显式恢复工作区。
 - API Key 仍只保存在当前应用会话中，不进入 IndexedDB 或导出文件。
-- 后续应补齐 JSON 恢复能力，再将导出文件作为浏览器与桌面端之间的迁移通道。
+- 恢复前会校验格式版本、字段和对象关系；校验或写入失败时保留当前工作区。
 
 ## 正式 GitHub Release
 

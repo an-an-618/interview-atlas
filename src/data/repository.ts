@@ -2,6 +2,7 @@ import type {
   AtomicQuestion,
   Interview,
   InterviewAIReview,
+  MockInterviewSession,
   Preference,
   ResumeExperience,
   ReviewEvent,
@@ -12,7 +13,7 @@ import type {
 import { emptyWorkspace } from "../domain/workspace";
 
 const DATABASE_NAME = "interview-atlas";
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 6;
 
 const stores = {
   interviews: "interviews",
@@ -21,6 +22,7 @@ const stores = {
   resumeExperiences: "resumeExperiences",
   aiReviews: "aiReviews",
   reviewEvents: "reviewEvents",
+  mockInterviews: "mockInterviews",
   preferences: "preferences",
 } as const;
 
@@ -31,6 +33,7 @@ const dataStoreNames = [
   stores.resumeExperiences,
   stores.aiReviews,
   stores.reviewEvents,
+  stores.mockInterviews,
 ] as const;
 
 export interface WorkspaceRepository {
@@ -134,6 +137,7 @@ async function loadWorkspace(): Promise<Workspace> {
       resumeExperiences,
       aiReviews,
       reviewEvents,
+      mockInterviews,
     ] = await Promise.all([
       readAll<Interview>(transaction, stores.interviews),
       readAll<AtomicQuestion>(transaction, stores.questions),
@@ -141,6 +145,7 @@ async function loadWorkspace(): Promise<Workspace> {
       readAll<ResumeExperience>(transaction, stores.resumeExperiences),
       readAll<InterviewAIReview>(transaction, stores.aiReviews),
       readAll<ReviewEvent>(transaction, stores.reviewEvents),
+      readAll<MockInterviewSession>(transaction, stores.mockInterviews),
     ]);
     await completed;
     return {
@@ -150,6 +155,7 @@ async function loadWorkspace(): Promise<Workspace> {
       resumeExperiences,
       aiReviews,
       reviewEvents,
+      mockInterviews,
     };
   } finally {
     database.close();
@@ -186,6 +192,11 @@ async function saveWorkspace(workspace: Workspace): Promise<void> {
     );
     replaceStore(transaction, stores.aiReviews, workspace.aiReviews);
     replaceStore(transaction, stores.reviewEvents, workspace.reviewEvents);
+    replaceStore(
+      transaction,
+      stores.mockInterviews,
+      workspace.mockInterviews,
+    );
     await completed;
   } finally {
     database.close();
@@ -234,7 +245,7 @@ export const indexedDbRepository: WorkspaceRepository = {
   getPreference,
   setPreference,
   export: (workspace) => ({
-    formatVersion: 4,
+    formatVersion: 5,
     exportedAt: new Date().toISOString(),
     ...workspace,
     questions: workspace.questions.map(normalizeQuestion),

@@ -113,4 +113,5 @@ export const createDemoWorkspace = (): Workspace => ({
   ],
   aiReviews: [],
   reviewEvents: [],
+  mockInterviews: [],
 });

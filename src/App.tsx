@@ -6,7 +6,6 @@ import {
   ChevronRight,
   CircleHelp,
   Database,
-  Download,
   FileUser,
   FileText,
   ListFilter,
@@ -14,6 +13,7 @@ import {
   Link2,
   LoaderCircle,
   Menu,
+  MessageSquareText,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -23,6 +23,7 @@ import {
   Settings,
   Sparkles,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -36,7 +37,9 @@ import type {
 import { AISettingsPanel, InterviewImportDialog } from "./components/AI";
 import { QuestionForm, SyncBlockForm } from "./components/Forms";
 import { Modal } from "./components/Modal";
+import { MockInterviewPage } from "./components/MockInterview";
 import { ResumePage } from "./components/Resume";
+import { WorkspaceMigration } from "./components/WorkspaceMigration";
 import type {
   AIReviewCandidate,
   AtomicQuestion,
@@ -47,16 +50,24 @@ import type {
   SaveAIReviewCandidateInput,
   SyncBlock,
   UpdateAIReviewCandidateInput,
+  Workspace,
 } from "./domain/types";
 import {
   getRandomQuestion,
   getRecommendedSyncBlocks,
+  sortSyncBlocksByLinkedQuestionCount,
 } from "./domain/workspace";
 import { useAISettings } from "./hooks/useAISettings";
 import { useWorkspace } from "./hooks/useWorkspace";
 
 type View =
-  "overview" | "interviews" | "questions" | "sync" | "resume" | "settings";
+  | "overview"
+  | "mock"
+  | "interviews"
+  | "questions"
+  | "sync"
+  | "resume"
+  | "settings";
 
 type Dialog =
   | { kind: "interview" }
@@ -67,6 +78,7 @@ type Dialog =
 
 const navItems = [
   { id: "overview" as const, label: "概览", icon: Home },
+  { id: "mock" as const, label: "模拟面试", icon: MessageSquareText },
   { id: "interviews" as const, label: "面试记录", icon: FileText },
   { id: "questions" as const, label: "原子问答", icon: CircleHelp },
   { id: "sync" as const, label: "同步块", icon: Link2 },
@@ -74,10 +86,14 @@ const navItems = [
   { id: "settings" as const, label: "设置", icon: Settings },
 ];
 
+const knowledgeNavItems = navItems.filter((item) =>
+  ["interviews", "questions", "sync", "resume"].includes(item.id),
+);
+
 const navGroups = [
-  { label: "工作台", items: navItems.slice(0, 1) },
-  { label: "知识库", items: navItems.slice(1, 5) },
-  { label: "系统", items: navItems.slice(5) },
+  { label: "工作台", items: navItems.slice(0, 2) },
+  { label: "知识库", items: knowledgeNavItems },
+  { label: "系统", items: navItems.slice(6) },
 ];
 
 function BrandMark({ compact = false }: { compact?: boolean }) {
@@ -858,7 +874,12 @@ function InterviewsPage({
               onClick={() => onOpen(interview.id)}
             >
               <span className="interview-main">
-                <strong>{interview.company}</strong>
+                <span className="interview-title-line">
+                  <strong>{interview.company}</strong>
+                  {interview.simulated ? (
+                    <span className="simulation-badge compact">模拟面</span>
+                  ) : null}
+                </span>
                 <small>
                   {[interview.role, interview.source, interview.round]
                     .filter(Boolean)
@@ -1215,6 +1236,7 @@ function InterviewDetail({
   onResolveAIReviewCandidate,
   onAcceptAllAIReviewCandidates,
   onOpenAISettings,
+  onOpenMockInterview,
 }: {
   interview: Interview;
   questions: AtomicQuestion[];
@@ -1247,6 +1269,7 @@ function InterviewDetail({
   ) => void;
   onAcceptAllAIReviewCandidates: (interviewId: string) => void;
   onOpenAISettings: () => void;
+  onOpenMockInterview: (id: string) => void;
 }) {
   const [sourceExpanded, setSourceExpanded] = useState(false);
   const [aiLoading, setAILoading] = useState(false);
@@ -1515,7 +1538,25 @@ function InterviewDetail({
         </div>
 
         <header className="interview-detail-hero">
-          <p className="eyebrow">面试 · {formatDate(interview.date)}</p>
+          <div className="interview-detail-kicker">
+            <p className="eyebrow">面试 · {formatDate(interview.date)}</p>
+            {interview.simulated ? (
+              <button
+                className="simulation-badge"
+                type="button"
+                onClick={() =>
+                  interview.mockInterviewId
+                    ? onOpenMockInterview(interview.mockInterviewId)
+                    : undefined
+                }
+                disabled={!interview.mockInterviewId}
+                title="查看模拟面试反馈"
+              >
+                <Sparkles size={12} aria-hidden="true" />
+                模拟面
+              </button>
+            ) : null}
+          </div>
           <h1>
             {interview.company}
             {interview.role ? <em> · {interview.role}</em> : null}
@@ -2281,8 +2322,13 @@ function SyncPage({
   onOpenQuestion: (id: string) => void;
   onOpenResume: (id: string) => void;
 }) {
+  const sortedSyncBlocks = useMemo(
+    () => sortSyncBlocksByLinkedQuestionCount(syncBlocks),
+    [syncBlocks],
+  );
   const selected =
-    syncBlocks.find((item) => item.id === selectedId) ?? syncBlocks[0];
+    sortedSyncBlocks.find((item) => item.id === selectedId) ??
+    sortedSyncBlocks[0];
   const linkedExperiences = selected
     ? resumeExperiences.filter(
         (experience) =>
@@ -2309,7 +2355,7 @@ function SyncPage({
       {syncBlocks.length && selected ? (
         <div className="sync-layout">
           <nav className="sync-list" aria-label="同步块列表">
-            {syncBlocks.map((syncBlock) => (
+            {sortedSyncBlocks.map((syncBlock) => (
               <button
                 className={syncBlock.id === selected.id ? "active" : ""}
                 key={syncBlock.id}
@@ -2393,6 +2439,7 @@ function SettingsPage({
   onClearAIApiKey,
   onTestAI,
   onLoadDemo,
+  onRestore,
   onExport,
   onClear,
 }: {
@@ -2406,9 +2453,16 @@ function SettingsPage({
   onClearAIApiKey: (credentialId: AIProviderCredentialId) => void;
   onTestAI: (config: AIProviderConfig, apiKey: string) => Promise<void>;
   onLoadDemo: () => void;
+  onRestore: (workspace: Workspace) => Promise<void>;
   onExport: () => void;
   onClear: () => void;
 }) {
+  const [expandedGroup, setExpandedGroup] = useState<
+    "ai" | "data" | null
+  >(null);
+  const aiExpanded = expandedGroup === "ai";
+  const dataExpanded = expandedGroup === "data";
+
   return (
     <div className="page settings-page">
       <PageHeader
@@ -2426,56 +2480,119 @@ function SettingsPage({
         </div>
         <CheckCircle2 className="success-icon" size={20} aria-label="可用" />
       </section>
-      <AISettingsPanel
-        config={aiConfig}
-        loading={aiLoading}
-        error={aiError}
-        onSave={onSaveAIConfig}
-        getApiKey={getAIApiKey}
-        onSetApiKey={onSetAIApiKey}
-        onClearApiKey={onClearAIApiKey}
-        onTest={onTestAI}
-      />
-      <section className="settings-section action-section">
-        <div>
-          <Download size={20} aria-hidden="true" />
-          <span>
-            <strong>导出完整备份</strong>
-            <small>包含对象关系的版本化 JSON，不包含任何凭据。</small>
-          </span>
-        </div>
-        <button
-          className="button secondary"
-          onClick={onExport}
-          disabled={!hasData}
+
+      <div className="settings-groups">
+        <section className={`settings-group${aiExpanded ? " expanded" : ""}`}>
+          <button
+            className="settings-group-trigger"
+            type="button"
+            aria-expanded={aiExpanded}
+            aria-controls="settings-ai-panel"
+            onClick={() => setExpandedGroup(aiExpanded ? null : "ai")}
+          >
+            <div>
+              <Sparkles size={20} aria-hidden="true" />
+              <span>
+                <strong>AI 服务</strong>
+                <small>配置模型提供方、API Key、服务地址与连接状态。</small>
+              </span>
+            </div>
+            <ChevronDown size={19} aria-hidden="true" />
+          </button>
+          <div
+            className="settings-group-content"
+            id="settings-ai-panel"
+            hidden={!aiExpanded}
+          >
+            <AISettingsPanel
+              config={aiConfig}
+              loading={aiLoading}
+              error={aiError}
+              embedded
+              onSave={onSaveAIConfig}
+              getApiKey={getAIApiKey}
+              onSetApiKey={onSetAIApiKey}
+              onClearApiKey={onClearAIApiKey}
+              onTest={onTestAI}
+            />
+          </div>
+        </section>
+
+        <section
+          className={`settings-group${dataExpanded ? " expanded" : ""}`}
         >
-          导出
-        </button>
-      </section>
-      <section className="settings-section action-section">
-        <div>
-          <Sparkles size={20} aria-hidden="true" />
-          <span>
-            <strong>加载示例工作区</strong>
-            <small>显式加入虚构内容，用于体验首个闭环。</small>
-          </span>
-        </div>
-        <button className="button secondary" onClick={onLoadDemo}>
-          加载示例
-        </button>
-      </section>
-      <section className="settings-section action-section danger-zone">
-        <div>
-          <Trash2 size={20} aria-hidden="true" />
-          <span>
-            <strong>清空本地工作区</strong>
-            <small>此操作会删除当前浏览器中的全部千面数据。</small>
-          </span>
-        </div>
-        <button className="button danger" onClick={onClear} disabled={!hasData}>
-          清空
-        </button>
-      </section>
+          <button
+            className="settings-group-trigger"
+            type="button"
+            aria-expanded={dataExpanded}
+            aria-controls="settings-data-panel"
+            onClick={() => setExpandedGroup(dataExpanded ? null : "data")}
+          >
+            <div>
+              <Database size={20} aria-hidden="true" />
+              <span>
+                <strong>数据管理</strong>
+                <small>备份、迁移、示例数据与本地数据清理。</small>
+              </span>
+            </div>
+            <ChevronDown size={19} aria-hidden="true" />
+          </button>
+          <div
+            className="settings-group-content data-settings-content"
+            id="settings-data-panel"
+            hidden={!dataExpanded}
+          >
+            <section className="settings-section action-section">
+              <div>
+                <Upload size={20} aria-hidden="true" />
+                <span>
+                  <strong>导出 JSON 备份</strong>
+                  <small>
+                    下载当前工作区的全部数据与关联关系，可用于换机迁移或恢复；不含
+                    AI API Key。
+                  </small>
+                </span>
+              </div>
+              <button
+                className="button secondary"
+                onClick={onExport}
+                disabled={!hasData}
+              >
+                下载备份
+              </button>
+            </section>
+            <WorkspaceMigration hasData={hasData} onRestore={onRestore} />
+            <section className="settings-section action-section">
+              <div>
+                <Sparkles size={20} aria-hidden="true" />
+                <span>
+                  <strong>加载示例工作区</strong>
+                  <small>显式加入虚构内容，用于体验首个闭环。</small>
+                </span>
+              </div>
+              <button className="button secondary" onClick={onLoadDemo}>
+                加载示例
+              </button>
+            </section>
+            <section className="settings-section action-section danger-zone">
+              <div>
+                <Trash2 size={20} aria-hidden="true" />
+                <span>
+                  <strong>清空本地工作区</strong>
+                  <small>此操作会删除当前浏览器中的全部千面数据。</small>
+                </span>
+              </div>
+              <button
+                className="button danger"
+                onClick={onClear}
+                disabled={!hasData}
+              >
+                清空
+              </button>
+            </section>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
@@ -2487,6 +2604,10 @@ export default function App() {
     error,
     dismissError,
     createInterview,
+    createMockInterview,
+    appendMockInterviewMessage,
+    endMockInterview,
+    applyMockInterviewAnalysis,
     updateInterview,
     createQuestion,
     saveAIReview,
@@ -2503,6 +2624,7 @@ export default function App() {
     deleteResumeExperience,
     loadDemo,
     clear,
+    restoreWorkspace,
     exportWorkspace,
   } = useWorkspace();
   const aiSettings = useAISettings();
@@ -2516,6 +2638,9 @@ export default function App() {
     null,
   );
   const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
+  const [selectedMockInterviewId, setSelectedMockInterviewId] = useState<
+    string | null
+  >(null);
   const [questionReturnView, setQuestionReturnView] =
     useState<View>("questions");
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -2564,7 +2689,8 @@ export default function App() {
     workspace.interviews.length +
       workspace.questions.length +
       workspace.syncBlocks.length +
-      workspace.resumeExperiences.length >
+      workspace.resumeExperiences.length +
+      workspace.mockInterviews.length >
     0;
 
   const notify = (message: string) => {
@@ -2578,19 +2704,30 @@ export default function App() {
     setSelectedSyncId(null);
     setSelectedQuestionId(null);
     setSelectedResumeId(null);
+    setSelectedMockInterviewId(null);
     setMobileMenuOpen(false);
     setMobileKnowledgeMenuOpen(false);
   };
 
   const openKnowledgeView = (next: View) => {
     navigate(next);
-    setMobileKnowledgeMenuOpen(true);
   };
 
   const openInterview = (id: string) => {
     setView("interviews");
     setSelectedInterviewId(id);
     setSelectedQuestionId(null);
+  };
+
+  const openMockInterview = (id: string) => {
+    setView("mock");
+    setSelectedMockInterviewId(id);
+    setSelectedInterviewId(null);
+    setSelectedQuestionId(null);
+    setSelectedSyncId(null);
+    setSelectedResumeId(null);
+    setMobileMenuOpen(false);
+    setMobileKnowledgeMenuOpen(false);
   };
 
   const openSync = (id: string) => {
@@ -2719,7 +2856,9 @@ export default function App() {
                   >
                     <Icon size={17} aria-hidden="true" />
                     <span>{item.label}</span>
-                    {item.id === "interviews" ? (
+                    {item.id === "mock" ? (
+                      <small>{workspace.mockInterviews.length}</small>
+                    ) : item.id === "interviews" ? (
                       <small>{workspace.interviews.length}</small>
                     ) : item.id === "questions" ? (
                       <small>{workspace.questions.length}</small>
@@ -2765,9 +2904,22 @@ export default function App() {
           </button>
           <span className="mobile-brand" aria-label="千面，interview atlas">
             <BrandMark compact />
-            <strong>interview atlas</strong>
+            <span>
+              <strong>千面</strong>
+              <small>interview atlas</small>
+            </span>
           </span>
-          <span className="mobile-header-spacer" aria-hidden="true" />
+          <button
+            className={`icon-button mobile-settings${
+              view === "settings" ? " active" : ""
+            }`}
+            type="button"
+            onClick={() => navigate("settings")}
+            aria-label="打开设置"
+            title="设置"
+          >
+            <Settings size={19} aria-hidden="true" />
+          </button>
         </header>
 
         {error ? (
@@ -2792,6 +2944,24 @@ export default function App() {
             onUpdateAIReviewCandidate={updateAIReviewCandidate}
             onResolveAIReviewCandidate={resolveAIReviewCandidate}
             onAcceptAllAIReviewCandidates={acceptAllAIReviewCandidates}
+          />
+        ) : null}
+
+        {view === "mock" ? (
+          <MockInterviewPage
+            workspace={workspace}
+            focusedId={selectedMockInterviewId}
+            configured={aiSettings.configured}
+            config={aiSettings.config}
+            apiKey={aiSettings.apiKey}
+            client={aiClient}
+            onFocus={setSelectedMockInterviewId}
+            onCreate={createMockInterview}
+            onAppendMessage={appendMockInterviewMessage}
+            onEnd={endMockInterview}
+            onApplyAnalysis={applyMockInterviewAnalysis}
+            onOpenSettings={() => navigate("settings")}
+            onOpenInterview={openInterview}
           />
         ) : null}
 
@@ -2833,6 +3003,7 @@ export default function App() {
             onResolveAIReviewCandidate={resolveAIReviewCandidate}
             onAcceptAllAIReviewCandidates={acceptAllAIReviewCandidates}
             onOpenAISettings={() => navigate("settings")}
+            onOpenMockInterview={openMockInterview}
           />
         ) : null}
 
@@ -2942,15 +3113,29 @@ export default function App() {
               navigate("overview");
               notify("示例工作区已加载");
             }}
+            onRestore={async (nextWorkspace) => {
+              await restoreWorkspace(nextWorkspace);
+              navigate("overview");
+              notify("备份已导入并替换当前工作区");
+            }}
             onExport={exportData}
             onClear={clearData}
           />
         ) : null}
       </main>
 
+      {mobileKnowledgeMenuOpen ? (
+        <button
+          className="mobile-bottom-nav-backdrop"
+          type="button"
+          aria-label="关闭知识库菜单"
+          onClick={() => setMobileKnowledgeMenuOpen(false)}
+        />
+      ) : null}
+
       <nav
-        className={`bottom-nav ${
-          mobileKnowledgeMenuOpen ? "knowledge-expanded" : "overview-expanded"
+        className={`bottom-nav${mobileKnowledgeMenuOpen ? " menu-open" : ""}${
+          mobileMenuOpen ? " nav-hidden" : ""
         }`}
         aria-label="移动端主导航"
       >
@@ -2963,27 +3148,52 @@ export default function App() {
           <span>概览</span>
         </button>
         <button
+          className={`bottom-mock ${view === "mock" ? "active" : ""}`}
+          onClick={() => navigate("mock")}
+          aria-current={view === "mock" ? "page" : undefined}
+        >
+          <MessageSquareText size={19} aria-hidden="true" />
+          <span>模拟</span>
+        </button>
+        <button
           className="bottom-create"
           onClick={() => {
             setMobileKnowledgeMenuOpen(false);
             setDialog({ kind: "interview" });
           }}
-          aria-label="创建面试记录"
-          title="创建面试记录"
+          aria-label="导入面经"
+          title="导入面经"
         >
           <span className="bottom-create-icon">
             <Plus size={23} aria-hidden="true" />
           </span>
-          <span className="bottom-create-label">创建</span>
+          <span className="bottom-create-label">导入</span>
         </button>
         <div className="bottom-knowledge">
+          <button
+            className={`bottom-knowledge-toggle ${
+              ["interviews", "questions", "sync", "resume"].includes(view)
+                ? "active"
+                : ""
+            }`}
+            onClick={() =>
+              setMobileKnowledgeMenuOpen((current) => !current)
+            }
+            aria-expanded={mobileKnowledgeMenuOpen}
+            aria-haspopup="menu"
+            aria-controls="mobile-knowledge-tabs"
+          >
+            <BookOpen size={19} aria-hidden="true" />
+            <span>知识库</span>
+          </button>
           {mobileKnowledgeMenuOpen ? (
             <div
-              className="bottom-knowledge-tabs"
+              className="bottom-knowledge-panel"
               id="mobile-knowledge-tabs"
               aria-label="知识库分类"
+              role="menu"
             >
-              {navItems.slice(1, 5).map((item) => {
+              {knowledgeNavItems.map((item) => {
                 const Icon = item.icon;
                 const shortLabel =
                   item.id === "interviews"
@@ -3002,6 +3212,7 @@ export default function App() {
                     aria-label={item.label}
                     aria-current={view === item.id ? "page" : undefined}
                     title={item.label}
+                    role="menuitem"
                   >
                     <Icon size={16} aria-hidden="true" />
                     <span>{shortLabel}</span>
@@ -3009,21 +3220,7 @@ export default function App() {
                 );
               })}
             </div>
-          ) : (
-            <button
-              className={`bottom-knowledge-toggle ${
-                ["interviews", "questions", "sync", "resume"].includes(view)
-                  ? "active"
-                  : ""
-              }`}
-              onClick={() => setMobileKnowledgeMenuOpen(true)}
-              aria-expanded="false"
-              aria-controls="mobile-knowledge-tabs"
-            >
-              <BookOpen size={19} aria-hidden="true" />
-              <span>知识库</span>
-            </button>
-          )}
+          ) : null}
         </div>
       </nav>
 
@@ -3110,6 +3307,7 @@ export default function App() {
         >
           <SyncBlockForm
             questions={workspace.questions}
+            resumeExperiences={workspace.resumeExperiences}
             syncBlocks={workspace.syncBlocks}
             initialQuestionId={dialog.questionId}
             onCancel={() => setDialog(null)}
@@ -3137,7 +3335,7 @@ export default function App() {
         </div>
       ) : null}
 
-      {!hasData && view !== "settings" ? (
+      {!hasData && view !== "settings" && view !== "mock" ? (
         <button
           className="demo-shortcut"
           onClick={() => {

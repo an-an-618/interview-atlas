@@ -1,18 +1,23 @@
 import { describe, expect, it } from "vitest";
-import type { Workspace } from "./types";
+import type { SyncBlock, Workspace } from "./types";
 import {
+  addMockInterview,
   addQuestion,
   addResumeExperience,
   addStandaloneQuestion,
   addSyncBlock,
+  appendMockInterviewMessage,
+  applyMockInterviewAnalysis,
   completeInterviewAIReview,
   deleteResumeExperience,
   emptyWorkspace,
+  endMockInterview,
   getRandomQuestion,
   getRecommendedSyncBlocks,
   linkQuestionToSyncBlock,
   resolveAIReviewCandidate,
   saveInterviewAIReview,
+  sortSyncBlocksByLinkedQuestionCount,
   updateResumeExperience,
   updateInterview,
   updateQuestion,
@@ -120,6 +125,7 @@ describe("workspace domain", () => {
       body: "目标、指标和约束。",
       reviewNotes: "",
       questionIds: [],
+      resumeExperienceIds: [],
     }).workspace;
     const created = addResumeExperience(withSync, {
       type: "项目",
@@ -185,12 +191,14 @@ describe("workspace domain", () => {
       body: "目标、指标、约束。",
       reviewNotes: "",
       questionIds: [withQuestion.questions[0]!.id],
+      resumeExperienceIds: [],
     }).workspace;
     const second = addSyncBlock(first, {
       title: "成功标准新版",
       body: "目标、指标、约束和复盘。",
       reviewNotes: "",
       questionIds: [withQuestion.questions[0]!.id],
+      resumeExperienceIds: [],
     }).workspace;
 
     expect(second.syncBlocks).toHaveLength(2);
@@ -198,6 +206,45 @@ describe("workspace domain", () => {
     expect(second.questions[0]?.linkedSyncBlockId).toBe(
       second.syncBlocks[0]?.id,
     );
+  });
+
+  it("links selected resume experiences when creating a sync block", () => {
+    const first = addResumeExperience(baseWorkspace(), {
+      type: "实习",
+      title: "增长平台",
+      organization: "示例公司",
+      period: "2026",
+      bullets: ["负责策略设计"],
+      linkedQuestionIds: [],
+      linkedSyncBlockIds: [],
+    });
+    const second = addResumeExperience(first.workspace, {
+      type: "项目",
+      title: "个人项目",
+      organization: "",
+      period: "2026",
+      bullets: ["完成产品验证"],
+      linkedQuestionIds: [],
+      linkedSyncBlockIds: [],
+    });
+    const result = addSyncBlock(second.workspace, {
+      title: "策略设计",
+      body: "围绕目标、方案和结果展开。",
+      reviewNotes: "",
+      questionIds: [],
+      resumeExperienceIds: [first.experience.id],
+    });
+
+    expect(
+      result.workspace.resumeExperiences.find(
+        (experience) => experience.id === first.experience.id,
+      )?.linkedSyncBlockIds,
+    ).toEqual([result.syncBlock.id]);
+    expect(
+      result.workspace.resumeExperiences.find(
+        (experience) => experience.id === second.experience.id,
+      )?.linkedSyncBlockIds,
+    ).toEqual([]);
   });
 
   it("links an imported question only after an explicit sync selection", () => {
@@ -211,6 +258,7 @@ describe("workspace domain", () => {
       body: "目标、指标和约束。",
       reviewNotes: "",
       questionIds: [],
+      resumeExperienceIds: [],
     }).workspace;
     const questionId = withSync.questions[0]!.id;
     const syncBlockId = withSync.syncBlocks[0]!.id;
@@ -288,6 +336,7 @@ describe("workspace domain", () => {
       body: "目标、指标和约束。",
       reviewNotes: "",
       questionIds: [],
+      resumeExperienceIds: [],
     }).workspace;
     const syncBlockId = withSync.syncBlocks[0]!.id;
     const completed = completeInterviewAIReview(
@@ -320,6 +369,139 @@ describe("workspace domain", () => {
     expect(completed.questions).toHaveLength(1);
     expect(completed.questions[0]?.linkedSyncBlockId).toBe(syncBlockId);
     expect(completed.aiReviews[0]?.candidates[1]?.decision).toBe("ignored");
+  });
+
+  it("saves a completed mock interview before AI analysis", () => {
+    const created = addMockInterview(baseWorkspace(), {
+      company: "示例公司",
+      role: "产品经理",
+      round: "二面",
+      jobDescription: "负责 AI 产品策略",
+      additionalInfo: "",
+      interviewerPrompt: "严格追问事实",
+      targetQuestionCount: 8,
+    });
+    const withQuestion = appendMockInterviewMessage(
+      created.workspace,
+      created.session.id,
+      "interviewer",
+      "请介绍一次你负责的 AI 产品决策。",
+    );
+    const withAnswer = appendMockInterviewMessage(
+      withQuestion.workspace,
+      created.session.id,
+      "candidate",
+      "我负责过评测闭环，并用线上指标验证策略。",
+    );
+    const ended = endMockInterview(
+      withAnswer.workspace,
+      created.session.id,
+      "user",
+      "用户主动结束",
+    );
+
+    expect(ended.session.status).toBe("completed");
+    expect(ended.session.feedback).toBeNull();
+    expect(ended.interview).toMatchObject({
+      simulated: true,
+      source: "AI 模拟面试",
+      status: "pending",
+      questionIds: [],
+    });
+    expect(ended.interview.rawText).toContain("候选人：我负责过评测闭环");
+  });
+
+  it("adds analyzed mock questions without a simulation marker on questions", () => {
+    const created = addMockInterview(emptyWorkspace(), {
+      company: "示例公司",
+      role: "产品经理",
+      round: "",
+      jobDescription: "",
+      additionalInfo: "",
+      interviewerPrompt: "逐层追问",
+      targetQuestionCount: 6,
+    });
+    const withQuestion = appendMockInterviewMessage(
+      created.workspace,
+      created.session.id,
+      "interviewer",
+      "你如何设计评测指标？",
+    );
+    const withAnswer = appendMockInterviewMessage(
+      withQuestion.workspace,
+      created.session.id,
+      "candidate",
+      "我会先定义业务目标，再拆成过程和结果指标。",
+    );
+    const ended = endMockInterview(
+      withAnswer.workspace,
+      created.session.id,
+      "ai",
+      "信息已足够",
+    );
+    const analyzed = applyMockInterviewAnalysis(
+      ended.workspace,
+      created.session.id,
+      {
+        summary: "回答结构清晰",
+        overallAssessment: "能够连接业务目标与评测指标。",
+        strengths: [],
+        improvements: [],
+        nextSteps: ["补充具体指标数值"],
+        questionReviews: [],
+        generatedAt: "2026-10-01T00:00:00.000Z",
+      },
+      [
+        {
+          title: "你如何设计评测指标？",
+          answer: "我会先定义业务目标，再拆成过程和结果指标。",
+          tags: ["产品评测"],
+          sourceExcerpt: "我会先定义业务目标",
+        },
+      ],
+    );
+
+    expect(analyzed.workspace.interviews[0]?.status).toBe("reviewed");
+    expect(analyzed.workspace.interviews[0]?.questionIds).toHaveLength(1);
+    expect(analyzed.workspace.questions[0]).toMatchObject({
+      title: "你如何设计评测指标？",
+      notes: "",
+      sourceInterviewIds: [ended.interview.id],
+    });
+    expect(analyzed.workspace.questions[0]).not.toHaveProperty("simulated");
+  });
+
+  it("sorts sync blocks by linked question count without changing the source order", () => {
+    const makeSyncBlock = (id: string, questionCount: number): SyncBlock => ({
+      id,
+      title: id,
+      body: id,
+      reviewNotes: "",
+      linkedQuestionIds: Array.from(
+        { length: questionCount },
+        (_, index) => `${id}-question-${index}`,
+      ),
+      pinned: false,
+      hidden: false,
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    });
+    const syncBlocks = [
+      makeSyncBlock("first", 1),
+      makeSyncBlock("most-linked", 3),
+      makeSyncBlock("same-count", 1),
+      makeSyncBlock("unlinked", 0),
+    ];
+
+    expect(
+      sortSyncBlocksByLinkedQuestionCount(syncBlocks).map((item) => item.id),
+    ).toEqual(["most-linked", "first", "same-count", "unlinked"]);
+    expect(syncBlocks.map((item) => item.id)).toEqual([
+      "first",
+      "most-linked",
+      "same-count",
+      "unlinked",
+    ]);
   });
 
   it("prioritizes pinned blocks and excludes hidden or reviewed-today blocks", () => {

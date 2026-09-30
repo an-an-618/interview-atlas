@@ -41,6 +41,7 @@ interface AISettingsPanelProps {
   config: AIProviderConfig;
   loading: boolean;
   error: string | null;
+  embedded?: boolean;
   onSave: (config: AIProviderConfig) => Promise<void>;
   getApiKey: (credentialId: AIProviderCredentialId) => string;
   onSetApiKey: (credentialId: AIProviderCredentialId, value: string) => void;
@@ -52,6 +53,7 @@ export function AISettingsPanel({
   config,
   loading,
   error,
+  embedded = false,
   onSave,
   getApiKey,
   onSetApiKey,
@@ -146,14 +148,20 @@ export function AISettingsPanel({
 
   return (
     <section className="ai-settings">
-      <header className="ai-settings-header">
-        <div>
-          <p className="eyebrow">AI service</p>
-          <h2>模型服务</h2>
-          <p>
-            预设会自动填写服务地址和推荐模型，也可以选择自定义接入。
-          </p>
-        </div>
+      <header
+        className={`ai-settings-header${embedded ? " embedded" : ""}`}
+      >
+        {embedded ? (
+          <strong>连接状态</strong>
+        ) : (
+          <div>
+            <p className="eyebrow">AI service</p>
+            <h2>模型服务</h2>
+            <p>
+              预设会自动填写服务地址和推荐模型，也可以选择自定义接入。
+            </p>
+          </div>
+        )}
         <span className={`connection-state state-${testState}`}>
           {testState === "testing" ? (
             <LoaderCircle className="spin" size={15} aria-hidden="true" />

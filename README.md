@@ -14,7 +14,7 @@
 
 ## What it does
 
-Interview Atlas preserves the original interview record as evidence, extracts concrete atomic Q&A instances, and connects recurring questions to synchronized blocks that hold a stable answer. AI proposes candidates; the user reviews every persisted change.
+Interview Atlas preserves the original interview record as evidence, extracts concrete atomic Q&A instances, and connects recurring questions to synchronized blocks that hold a stable answer. Ordinary AI extraction remains reviewable; a mock interview explicitly started by the user automatically saves its transcript and atomic Q&A without creating synchronized-block links.
 
 ```text
 Interview record → Atomic Q&A → Synchronized block → Review
@@ -33,39 +33,40 @@ The current application includes:
 - synchronized blocks with explicit, bidirectional relationships;
 - resume experiences with CRUD, relationship management, and diff preview;
 - a daily question, recommended synchronized blocks, and an AI review queue;
-- versioned JSON export, explicit demo data, and workspace deletion;
+- AI mock interviews grounded in prior interviews, resume evidence, and Q&A, with post-interview feedback and automatic capture;
+- validated versioned JSON export and restore, explicit demo data, and workspace deletion;
 - OpenAI-compatible providers with session-only API keys.
 
 ## Product rules
 
 - **Original text is evidence.** Derived content never replaces its source.
-- **AI suggests; the user decides.** No silent overwrite, merge, link, or deletion.
+- **AI suggests; the user decides.** No silent overwrite, merge, link, or deletion of user content; a mock interview explicitly started by the user saves its transcript and atomic Q&A automatically.
 - **Local-first is the default.** Workspace data stays in IndexedDB unless the user exports it.
 - **AI requests are explicit.** Selected content is sent directly to the configured provider only after a user action.
 - **Manual workflows remain complete.** The knowledge base works without AI configuration.
 
 ## Install on macOS
 
-The current desktop preview supports Apple Silicon Macs running macOS 13 or later.
+The 1.0 desktop release supports Apple Silicon Macs running macOS 13 or later.
 
-1. Open [GitHub Releases](https://github.com/an-an-618/interview-atlas/releases) and download the newest `Interview-Atlas_<version>_aarch64.dmg` plus `SHA256SUMS.txt`.
+1. Open the [latest GitHub Release](https://github.com/an-an-618/interview-atlas/releases/latest) and download `Interview-Atlas_1.0.0_aarch64.dmg` plus `SHA256SUMS-macos.txt`.
 2. Open the DMG and drag `千面.app` onto the `Applications` shortcut.
-3. The preview is not Apple-notarized yet. For the first launch, Control-click `千面.app` in Finder, choose **Open**, then confirm **Open** again. If needed, use **System Settings → Privacy & Security → Open Anyway**.
+3. The release is not Apple-notarized yet. For the first launch, Control-click `千面.app` in Finder, choose **Open**, then confirm **Open** again. If needed, use **System Settings → Privacy & Security → Open Anyway**.
 4. Later, launch 千面 from Applications, Spotlight, Launchpad, or the Dock.
 
 Do not disable system-wide Gatekeeper. Verify the download with:
 
 ```bash
-shasum -a 256 -c SHA256SUMS.txt
+shasum -a 256 -c SHA256SUMS-macos.txt
 ```
 
-The desktop app and browser version use separate IndexedDB workspaces. Browser data is not migrated automatically. For maintainer builds and future signing/notarization, see the [macOS distribution guide](docs/engineering/macos-distribution.md).
+The desktop app and browser version use separate IndexedDB workspaces and do not synchronize automatically. Export JSON from one client, then restore it from Settings in the other client to migrate the workspace. For maintainer builds and future signing/notarization, see the [macOS distribution guide](docs/engineering/macos-distribution.md).
 
 ## Install on Windows
 
-The Windows preview targets x64 Windows 10 and 11. Download the `interview-atlas-windows-x64` artifact from a successful [CI run](https://github.com/an-an-618/interview-atlas/actions/workflows/ci.yml), then run the NSIS `*-setup.exe`. An MSI is included for managed installation.
+The 1.0 desktop release targets x64 Windows 10 and 11. Open the [latest GitHub Release](https://github.com/an-an-618/interview-atlas/releases/latest) and run `Interview-Atlas_1.0.0_x64-setup.exe`. An MSI is available for managed installation.
 
-The preview is not Authenticode-signed, so Microsoft Defender SmartScreen may warn on first launch. See the [Windows distribution guide](docs/engineering/windows-distribution.md) for build, installation, and signing details.
+The release is not Authenticode-signed, so Microsoft Defender SmartScreen may warn on first launch. See the [Windows distribution guide](docs/engineering/windows-distribution.md) for build, installation, and signing details.
 
 ## Run locally
 
@@ -116,4 +117,4 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. Security and p
 
 ## Scope
 
-This is an active foundation release, not a hosted service. Desktop previews target Apple Silicon macOS and x64 Windows; Linux, Intel/Universal macOS, production signing, notarization, and automatic updates remain future work. Cloud sync, collaboration, automatic applications, recording, video, and real-time transcription are deliberately out of scope for the first release.
+The 1.0 desktop release supports Apple Silicon macOS and x64 Windows and remains a local-first application rather than a hosted service. Linux, Intel/Universal macOS, production signing, notarization, and automatic updates remain future work. Cloud sync, collaboration, automatic applications, recording, video, and real-time transcription remain out of scope.

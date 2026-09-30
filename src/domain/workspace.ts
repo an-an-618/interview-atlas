@@ -6,6 +6,12 @@ import type {
   CreateResumeExperienceInput,
   CreateSyncBlockInput,
   Interview,
+  MockInterviewFeedback,
+  MockInterviewMessage,
+  MockInterviewMessageRole,
+  MockInterviewQuestionInput,
+  MockInterviewSession,
+  CreateMockInterviewInput,
   ResumeExperience,
   SaveAIReviewCandidateInput,
   SyncBlock,
@@ -20,6 +26,7 @@ export const emptyWorkspace = (): Workspace => ({
   resumeExperiences: [],
   aiReviews: [],
   reviewEvents: [],
+  mockInterviews: [],
 });
 
 const timestamp = () => new Date().toISOString();
@@ -389,6 +396,228 @@ export function completeInterviewAIReview(
   );
 }
 
+export function addMockInterview(
+  workspace: Workspace,
+  input: CreateMockInterviewInput,
+): { workspace: Workspace; session: MockInterviewSession } {
+  const company = input.company.trim().slice(0, 120);
+  const role = input.role.trim().slice(0, 120);
+  if (!company || !role) {
+    throw new Error("Company and role are required");
+  }
+  const now = timestamp();
+  const session: MockInterviewSession = {
+    id: identifier(),
+    company,
+    role,
+    round: input.round.trim().slice(0, 80),
+    jobDescription: input.jobDescription.trim().slice(0, 20_000),
+    additionalInfo: input.additionalInfo.trim().slice(0, 8_000),
+    interviewerPrompt: input.interviewerPrompt.trim().slice(0, 30_000),
+    targetQuestionCount: Number.isFinite(input.targetQuestionCount)
+      ? Math.min(20, Math.max(3, Math.round(input.targetQuestionCount)))
+      : 8,
+    status: "active",
+    messages: [],
+    startedAt: now,
+    updatedAt: now,
+    endedAt: null,
+    endedBy: null,
+    endReason: "",
+    interviewId: null,
+    questionIds: [],
+    feedback: null,
+  };
+
+  return {
+    workspace: {
+      ...workspace,
+      mockInterviews: [session, ...workspace.mockInterviews],
+    },
+    session,
+  };
+}
+
+export function appendMockInterviewMessage(
+  workspace: Workspace,
+  sessionId: string,
+  role: MockInterviewMessageRole,
+  content: string,
+): { workspace: Workspace; session: MockInterviewSession } {
+  const session = workspace.mockInterviews.find((item) => item.id === sessionId);
+  if (!session) throw new Error("Mock interview not found");
+  if (session.status !== "active") {
+    throw new Error("Mock interview has already ended");
+  }
+
+  const now = timestamp();
+  const message: MockInterviewMessage = {
+    id: identifier(),
+    role,
+    content: content.trim().slice(0, 20_000),
+    createdAt: now,
+  };
+  const nextSession: MockInterviewSession = {
+    ...session,
+    messages: [...session.messages, message],
+    updatedAt: now,
+  };
+  return {
+    workspace: {
+      ...workspace,
+      mockInterviews: workspace.mockInterviews.map((item) =>
+        item.id === sessionId ? nextSession : item,
+      ),
+    },
+    session: nextSession,
+  };
+}
+
+function formatMockInterviewTranscript(session: MockInterviewSession): string {
+  const metadata = [
+    `${session.company} · ${session.role}`,
+    session.round,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const transcript = session.messages
+    .map(
+      (message) =>
+        `${message.role === "interviewer" ? "面试官" : "候选人"}：${message.content}`,
+    )
+    .join("\n\n");
+  return [metadata, transcript].filter(Boolean).join("\n\n");
+}
+
+export function endMockInterview(
+  workspace: Workspace,
+  sessionId: string,
+  endedBy: "ai" | "user",
+  endReason: string,
+): {
+  workspace: Workspace;
+  session: MockInterviewSession;
+  interview: Interview;
+} {
+  const session = workspace.mockInterviews.find((item) => item.id === sessionId);
+  if (!session) throw new Error("Mock interview not found");
+
+  const existingInterview = session.interviewId
+    ? workspace.interviews.find((item) => item.id === session.interviewId)
+    : undefined;
+  if (session.status === "completed" && existingInterview) {
+    return { workspace, session, interview: existingInterview };
+  }
+
+  const now = timestamp();
+  const interview: Interview = {
+    id: identifier(),
+    company: session.company,
+    role: session.role,
+    round: session.round || "模拟面试",
+    date: now.slice(0, 10),
+    source: "AI 模拟面试",
+    rawText: formatMockInterviewTranscript(session),
+    status: "pending",
+    questionIds: [],
+    createdAt: now,
+    updatedAt: now,
+    simulated: true,
+    mockInterviewId: session.id,
+  };
+  const nextSession: MockInterviewSession = {
+    ...session,
+    status: "completed",
+    endedAt: now,
+    endedBy,
+    endReason: endReason.trim(),
+    interviewId: interview.id,
+    updatedAt: now,
+  };
+
+  return {
+    workspace: {
+      ...workspace,
+      interviews: [interview, ...workspace.interviews],
+      mockInterviews: workspace.mockInterviews.map((item) =>
+        item.id === sessionId ? nextSession : item,
+      ),
+    },
+    session: nextSession,
+    interview,
+  };
+}
+
+export function applyMockInterviewAnalysis(
+  workspace: Workspace,
+  sessionId: string,
+  feedback: MockInterviewFeedback,
+  inputs: MockInterviewQuestionInput[],
+): { workspace: Workspace; session: MockInterviewSession } {
+  const session = workspace.mockInterviews.find((item) => item.id === sessionId);
+  if (!session || !session.interviewId) {
+    throw new Error("Completed mock interview not found");
+  }
+  if (session.questionIds.length) {
+    const existing: MockInterviewSession = { ...session, feedback };
+    return {
+      workspace: {
+        ...workspace,
+        mockInterviews: workspace.mockInterviews.map((item) =>
+          item.id === sessionId ? existing : item,
+        ),
+      },
+      session: existing,
+    };
+  }
+
+  const now = timestamp();
+  const questions: AtomicQuestion[] = inputs
+    .filter((input) => input.title.trim())
+    .slice(0, 40)
+    .map((input) => ({
+      id: identifier(),
+      title: input.title.trim(),
+      answer: input.answer.trim(),
+      notes: "",
+      tags: [
+        ...new Set(input.tags.map((tag) => tag.trim()).filter(Boolean)),
+      ].slice(0, 4),
+      sourceInterviewIds: [session.interviewId!],
+      linkedSyncBlockId: null,
+      createdAt: now,
+      updatedAt: now,
+    }));
+  const questionIds = questions.map((question) => question.id);
+  const nextSession: MockInterviewSession = {
+    ...session,
+    questionIds,
+    feedback,
+    updatedAt: now,
+  };
+
+  return {
+    workspace: {
+      ...workspace,
+      interviews: workspace.interviews.map((interview) =>
+        interview.id === session.interviewId
+          ? {
+              ...interview,
+              questionIds,
+              status: "reviewed",
+              updatedAt: now,
+            }
+          : interview,
+      ),
+      questions: [...questions, ...workspace.questions],
+      mockInterviews: workspace.mockInterviews.map((item) =>
+        item.id === sessionId ? nextSession : item,
+      ),
+    },
+    session: nextSession,
+  };
+}
+
 export function addStandaloneQuestion(
   workspace: Workspace,
   input: CreateQuestionInput,
@@ -532,14 +761,15 @@ export function addSyncBlock(
   workspace: Workspace,
   input: CreateSyncBlockInput,
 ): { workspace: Workspace; syncBlock: SyncBlock } {
-  const selectedIds = new Set(input.questionIds);
+  const selectedQuestionIds = new Set(input.questionIds);
+  const selectedResumeExperienceIds = new Set(input.resumeExperienceIds);
   const now = timestamp();
   const syncBlock: SyncBlock = {
     id: identifier(),
     title: input.title.trim(),
     body: input.body.trim(),
     reviewNotes: input.reviewNotes.trim(),
-    linkedQuestionIds: [...selectedIds],
+    linkedQuestionIds: [...selectedQuestionIds],
     pinned: false,
     hidden: false,
     createdAt: now,
@@ -550,7 +780,7 @@ export function addSyncBlock(
     .map((item) => ({
       ...item,
       linkedQuestionIds: item.linkedQuestionIds.filter(
-        (questionId) => !selectedIds.has(questionId),
+        (questionId) => !selectedQuestionIds.has(questionId),
       ),
     }));
 
@@ -558,7 +788,7 @@ export function addSyncBlock(
     workspace: {
       ...workspace,
       questions: workspace.questions.map((question) =>
-        selectedIds.has(question.id)
+        selectedQuestionIds.has(question.id)
           ? {
               ...question,
               linkedSyncBlockId: syncBlock.id,
@@ -567,9 +797,29 @@ export function addSyncBlock(
           : question,
       ),
       syncBlocks: [syncBlock, ...syncBlocks],
+      resumeExperiences: workspace.resumeExperiences.map((experience) =>
+        selectedResumeExperienceIds.has(experience.id)
+          ? {
+              ...experience,
+              linkedSyncBlockIds: [
+                ...new Set([...experience.linkedSyncBlockIds, syncBlock.id]),
+              ],
+              updatedAt: now,
+            }
+          : experience,
+      ),
     },
     syncBlock,
   };
+}
+
+export function sortSyncBlocksByLinkedQuestionCount(
+  syncBlocks: SyncBlock[],
+): SyncBlock[] {
+  return [...syncBlocks].sort(
+    (left, right) =>
+      right.linkedQuestionIds.length - left.linkedQuestionIds.length,
+  );
 }
 
 export function getRecommendedSyncBlocks(
