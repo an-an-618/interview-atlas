@@ -1,0 +1,28 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Interview Atlas",
+  "bundle": {
+    "targets": [
+      "nsis",
+      "msi"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "wix": {
+        "language": "en-US",
+        "upgradeCode": "866473B9-BBF1-4707-AC88-7C5F4725B117"
+      },
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser",
+        "languages": [
+          "SimpChinese",
+          "English"
+        ]
+      }
+    }
+  }
+}

@@ -52,7 +52,7 @@ jobs:
           cargo check --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Build macOS package
-        run: npm run desktop:build
+        run: npm run desktop:build:macos
 
       - name: Verify macOS artifacts
         run: |
@@ -63,3 +63,56 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app"
           hdiutil verify "$dmg"
           test "$(lipo -archs "$app/Contents/MacOS/interview-atlas")" = "arm64"
+
+  windows-package:
+    name: Windows x64 package
+    runs-on: windows-2025
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Rust
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.90.0 --profile minimal
+          rustup default 1.90.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build Windows installers
+        run: npm run desktop:build:windows
+
+      - name: Verify Windows artifacts
+        shell: pwsh
+        run: |
+          $msi = @(Get-ChildItem "src-tauri/target/release/bundle/msi/*.msi")
+          $nsis = @(Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe")
+
+          if ($msi.Count -ne 1) {
+            throw "Expected one MSI installer, found $($msi.Count)"
+          }
+          if ($nsis.Count -ne 1) {
+            throw "Expected one NSIS installer, found $($nsis.Count)"
+          }
+
+      - name: Upload Windows installers
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: interview-atlas-windows-x64
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 7

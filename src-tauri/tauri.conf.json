@@ -28,15 +28,14 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "app",
-      "dmg"
-    ],
+    "targets": "all",
     "category": "Productivity",
     "shortDescription": "本地优先的个人面试知识库",
     "longDescription": "整理面试记录、原子问答、同步块和简历经历，并由用户审核 AI 建议。",
     "icon": [
-      "icons/icon.icns"
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
     ],
     "macOS": {
       "minimumSystemVersion": "13.0",
