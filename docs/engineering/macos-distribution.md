@@ -50,7 +50,7 @@ npm run desktop:build
 
 ```text
 src-tauri/target/release/bundle/macos/千面.app
-src-tauri/target/release/bundle/dmg/千面_<version>_<architecture>.dmg
+src-tauri/target/release/bundle/dmg/Interview-Atlas_<version>_<architecture>.dmg
 ```
 
 构建脚本会在没有 Developer ID 签名时补充 ad-hoc 签名，并创建包含“千面.app”和“Applications”入口的压缩 DMG。
