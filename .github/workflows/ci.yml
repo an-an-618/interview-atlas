@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Web and macOS package
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Rust
+        run: |
+          rustup toolchain install 1.90.0 \
+            --profile minimal \
+            --component rustfmt \
+            --target aarch64-apple-darwin
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Check TypeScript
+        run: npm run typecheck
+
+      - name: Check Rust
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+          cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Build macOS package
+        run: npm run desktop:build
+
+      - name: Verify macOS artifacts
+        run: |
+          app="src-tauri/target/release/bundle/macos/千面.app"
+          version="$(node -p "require('./package.json').version")"
+          dmg="src-tauri/target/release/bundle/dmg/Interview-Atlas_${version}_aarch64.dmg"
+
+          codesign --verify --deep --strict --verbose=2 "$app"
+          hdiutil verify "$dmg"
+          test "$(lipo -archs "$app/Contents/MacOS/interview-atlas")" = "arm64"

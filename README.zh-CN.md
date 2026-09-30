@@ -4,6 +4,7 @@
 
 [English](README.md) · [产品上下文](docs/product/product-context.md) · [一期 PRD](docs/product/prd-v1.md) · [架构决策](docs/adr/README.md)
 
+[![CI](https://github.com/an-an-618/interview-atlas/actions/workflows/ci.yml/badge.svg)](https://github.com/an-an-618/interview-atlas/actions/workflows/ci.yml)
 ![React](https://img.shields.io/badge/React-19.3-149ECA)
 ![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178C6)
 ![Storage](https://img.shields.io/badge/storage-IndexedDB-6B7D3A)
