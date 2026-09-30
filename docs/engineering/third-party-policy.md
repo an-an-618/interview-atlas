@@ -30,6 +30,17 @@ Before adoption, document:
 
 On 2026-06-19, the project reviewed isolated shallow checkouts of `openai/skills`, `ComposioHQ/awesome-codex-skills`, `RoggeOhta/awesome-codex-cli`, and `Austin1serb/agents-md`. No additional capability was installed. The community collections remain reference material only.
 
+## GitHub Actions CI
+
+The CI workflow uses two official GitHub-maintained actions:
+
+| Action | Reviewed release and commit | Purpose |
+| --- | --- | --- |
+| `actions/checkout` | `v7.0.1` / `3d3c42e5aac5ba805825da76410c181273ba90b1` | Check out the repository in the GitHub-hosted runner |
+| `actions/setup-node` | `v7.0.0` / `820762786026740c76f36085b0efc47a31fe5020` | Install Node.js 24 and enable the npm cache |
+
+Both projects are maintained by GitHub under the MIT license. The workflow grants only `contents: read`, handles repository source and lockfiles, and sends network requests to GitHub, npm, and Cargo registries. It receives no application credentials or user workspace data. Removal consists of deleting `.github/workflows/ci.yml`.
+
 ## Tauri desktop packaging
 
 Tauri 2.12.0 is approved by [ADR 0004](../adr/0004-macos-tauri-wrapper.md) for the macOS desktop shell. The project is maintained by the Tauri Programme within the Commons Conservancy and is licensed under Apache-2.0 or MIT.
