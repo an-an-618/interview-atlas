@@ -2,7 +2,7 @@
 
 > **千面** is a local-first workspace that turns scattered interview notes into reviewable, reusable knowledge.
 
-[中文说明](README.zh-CN.md) · [Product context](docs/product/product-context.md) · [PRD](docs/product/prd-v1.md) · [Architecture decisions](docs/adr/README.md)
+[中文说明](README.zh-CN.md) · [Download](https://github.com/an-an-618/interview-atlas/releases) · [Product context](docs/product/product-context.md) · [PRD](docs/product/prd-v1.md) · [Architecture decisions](docs/adr/README.md)
 
 [![CI](https://github.com/an-an-618/interview-atlas/actions/workflows/ci.yml/badge.svg)](https://github.com/an-an-618/interview-atlas/actions/workflows/ci.yml)
 ![React](https://img.shields.io/badge/React-19.3-149ECA)
@@ -42,6 +42,23 @@ The current application includes:
 - **Local-first is the default.** Workspace data stays in IndexedDB unless the user exports it.
 - **AI requests are explicit.** Selected content is sent directly to the configured provider only after a user action.
 - **Manual workflows remain complete.** The knowledge base works without AI configuration.
+
+## Install on macOS
+
+The current desktop preview supports Apple Silicon Macs running macOS 13 or later.
+
+1. Open [GitHub Releases](https://github.com/an-an-618/interview-atlas/releases) and download the newest `Interview-Atlas_<version>_aarch64.dmg` plus `SHA256SUMS.txt`.
+2. Open the DMG and drag `千面.app` onto the `Applications` shortcut.
+3. The preview is not Apple-notarized yet. For the first launch, Control-click `千面.app` in Finder, choose **Open**, then confirm **Open** again. If needed, use **System Settings → Privacy & Security → Open Anyway**.
+4. Later, launch 千面 from Applications, Spotlight, Launchpad, or the Dock.
+
+Do not disable system-wide Gatekeeper. Verify the download with:
+
+```bash
+shasum -a 256 -c SHA256SUMS.txt
+```
+
+The desktop app and browser version use separate IndexedDB workspaces. Browser data is not migrated automatically. For maintainer builds and future signing/notarization, see the [macOS distribution guide](docs/engineering/macos-distribution.md).
 
 ## Run locally
 
