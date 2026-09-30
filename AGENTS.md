@@ -2,7 +2,9 @@
 
 ## Project phase and scope
 
-Interview Atlas is currently in product discovery. Do not add an application framework, runtime, database, rich-text editor, AI SDK, or production code until the relevant PRD and architecture decision records are approved. Keep proposals technology-neutral unless a comparison is explicitly requested.
+Interview Atlas is implementing its first local-first vertical slice. Product behavior is defined in `docs/product/product-context.md` and `docs/product/prd-v1.md`; accepted technical choices are recorded in `docs/adr/`.
+
+Do not add a rich-text editor, AI SDK, desktop wrapper, credential store, cloud service, or new persistence technology until the relevant architecture decision record is approved. Keep unapproved proposals technology-neutral.
 
 ## Repository structure
 
@@ -10,7 +12,10 @@ Interview Atlas is currently in product discovery. Do not add an application fra
 - `docs/adr/` contains architecture decision records. Copy `0000-template.md` for each decision.
 - `docs/engineering/` contains security, dependency, and delivery policies.
 - `.github/` contains issue and pull request templates.
-- Product source and test directories will be defined only after the application architecture is approved.
+- `src/domain/` contains framework-independent product rules and tests.
+- `src/data/` contains local persistence implementations.
+- `src/components/` contains reusable interface components.
+- `src/` entry files compose the responsive application.
 
 Do not place cloned reference repositories, generated files, resumes, interview transcripts, recordings, API keys, or local databases in this repository.
 

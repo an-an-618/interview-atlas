@@ -1,0 +1,216 @@
+import { useEffect, useRef, useState } from "react";
+import { createDemoWorkspace } from "../data/demo";
+import {
+  indexedDbRepository,
+  type WorkspaceRepository,
+} from "../data/repository";
+import type {
+  CreateInterviewInput,
+  CreateQuestionInput,
+  CreateResumeExperienceInput,
+  CreateSyncBlockInput,
+  SaveAIReviewCandidateInput,
+  UpdateAIReviewCandidateInput,
+  Workspace,
+} from "../domain/types";
+import {
+  addInterview,
+  addQuestion,
+  addResumeExperience,
+  addStandaloneQuestion,
+  addSyncBlock,
+  completeInterviewAIReview,
+  deleteResumeExperience,
+  emptyWorkspace,
+  linkQuestionToSyncBlock,
+  resolveAIReviewCandidate,
+  resolveAllAIReviewCandidates,
+  saveInterviewAIReview,
+  updateAIReviewCandidate,
+  updateResumeExperience,
+  updateInterview,
+  updateQuestion,
+} from "../domain/workspace";
+
+export function useWorkspace(
+  repository: WorkspaceRepository = indexedDbRepository,
+) {
+  const [workspace, setWorkspace] = useState<Workspace>(emptyWorkspace());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const workspaceRef = useRef(workspace);
+  const saveQueue = useRef(Promise.resolve());
+
+  const replaceWorkspace = (next: Workspace) => {
+    workspaceRef.current = next;
+    setWorkspace(next);
+    saveQueue.current = saveQueue.current
+      .then(() => repository.save(next))
+      .catch((reason: unknown) => {
+        setError(
+          reason instanceof Error ? reason.message : "本地保存失败，请重试。",
+        );
+      });
+  };
+
+  useEffect(() => {
+    let active = true;
+    repository
+      .load()
+      .then((saved) => {
+        if (!active) return;
+        workspaceRef.current = saved;
+        setWorkspace(saved);
+      })
+      .catch((reason: unknown) => {
+        if (!active) return;
+        setError(
+          reason instanceof Error ? reason.message : "无法打开本地知识库。",
+        );
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [repository]);
+
+  return {
+    workspace,
+    loading,
+    error,
+    dismissError: () => setError(null),
+    createInterview: (input: CreateInterviewInput) => {
+      const result = addInterview(workspaceRef.current, input);
+      replaceWorkspace(result.workspace);
+      return result.interview;
+    },
+    updateInterview: (interviewId: string, input: CreateInterviewInput) => {
+      const result = updateInterview(
+        workspaceRef.current,
+        interviewId,
+        input,
+      );
+      replaceWorkspace(result.workspace);
+      return result.interview;
+    },
+    createQuestion: (interviewId: string, input: CreateQuestionInput) => {
+      const result = addQuestion(workspaceRef.current, interviewId, input);
+      replaceWorkspace(result.workspace);
+      return result.question;
+    },
+    saveAIReview: (
+      interviewId: string,
+      candidates: SaveAIReviewCandidateInput[],
+    ) => {
+      const next = saveInterviewAIReview(
+        workspaceRef.current,
+        interviewId,
+        candidates,
+      );
+      replaceWorkspace(next);
+    },
+    completeAIReview: (
+      interviewId: string,
+      candidates: SaveAIReviewCandidateInput[],
+    ) => {
+      const next = completeInterviewAIReview(
+        workspaceRef.current,
+        interviewId,
+        candidates,
+      );
+      replaceWorkspace(next);
+    },
+    updateAIReviewCandidate: (
+      interviewId: string,
+      candidateId: string,
+      input: UpdateAIReviewCandidateInput,
+    ) => {
+      const next = updateAIReviewCandidate(
+        workspaceRef.current,
+        interviewId,
+        candidateId,
+        input,
+      );
+      replaceWorkspace(next);
+    },
+    resolveAIReviewCandidate: (
+      interviewId: string,
+      candidateId: string,
+      decision: "accepted" | "ignored",
+      connectToSuggested = false,
+    ) => {
+      const next = resolveAIReviewCandidate(
+        workspaceRef.current,
+        interviewId,
+        candidateId,
+        decision,
+        connectToSuggested,
+      );
+      replaceWorkspace(next);
+    },
+    acceptAllAIReviewCandidates: (interviewId: string) => {
+      const next = resolveAllAIReviewCandidates(
+        workspaceRef.current,
+        interviewId,
+      );
+      replaceWorkspace(next);
+    },
+    linkQuestionToSyncBlock: (questionId: string, syncBlockId: string) => {
+      const next = linkQuestionToSyncBlock(
+        workspaceRef.current,
+        questionId,
+        syncBlockId,
+      );
+      replaceWorkspace(next);
+    },
+    createStandaloneQuestion: (input: CreateQuestionInput) => {
+      const result = addStandaloneQuestion(workspaceRef.current, input);
+      replaceWorkspace(result.workspace);
+      return result.question;
+    },
+    updateQuestion: (questionId: string, input: CreateQuestionInput) => {
+      const result = updateQuestion(
+        workspaceRef.current,
+        questionId,
+        input,
+      );
+      replaceWorkspace(result.workspace);
+      return result.question;
+    },
+    createResumeExperience: (input: CreateResumeExperienceInput) => {
+      const result = addResumeExperience(workspaceRef.current, input);
+      replaceWorkspace(result.workspace);
+      return result.experience;
+    },
+    updateResumeExperience: (
+      experienceId: string,
+      input: CreateResumeExperienceInput,
+    ) => {
+      const result = updateResumeExperience(
+        workspaceRef.current,
+        experienceId,
+        input,
+      );
+      replaceWorkspace(result.workspace);
+      return result.experience;
+    },
+    deleteResumeExperience: (experienceId: string) => {
+      const next = deleteResumeExperience(
+        workspaceRef.current,
+        experienceId,
+      );
+      replaceWorkspace(next);
+    },
+    createSyncBlock: (input: CreateSyncBlockInput) => {
+      const result = addSyncBlock(workspaceRef.current, input);
+      replaceWorkspace(result.workspace);
+      return result.syncBlock;
+    },
+    loadDemo: () => replaceWorkspace(createDemoWorkspace()),
+    clear: () => replaceWorkspace(emptyWorkspace()),
+    exportWorkspace: () => repository.export(workspaceRef.current),
+  };
+}

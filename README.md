@@ -1,40 +1,85 @@
 # Interview Atlas
 
-[中文说明](README.zh-CN.md)
+> **千面** is a local-first workspace that turns scattered interview notes into reviewable, reusable knowledge.
 
-Interview Atlas, Chinese product name **千面**, is a local-first workspace for turning scattered interview experiences into reusable interview knowledge.
+[中文说明](README.zh-CN.md) · [Product context](docs/product/product-context.md) · [PRD](docs/product/prd-v1.md) · [Architecture decisions](docs/adr/README.md)
 
-The product vision is to help job seekers import unstructured interview notes, organize them into atomic question-and-answer blocks, connect repeated questions through synchronized knowledge blocks, and review the knowledge that matters most to them.
+![React](https://img.shields.io/badge/React-19.3-149ECA)
+![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178C6)
+![Storage](https://img.shields.io/badge/storage-IndexedDB-6B7D3A)
 
-## Current status
+![Interview Atlas overview](docs/assets/interview-atlas-overview.png)
 
-The project is in product discovery. This repository currently contains governance and requirement-review materials only. No application framework, database, editor, AI provider, or desktop runtime has been selected.
+## What it does
 
-## Proposed product areas
+Interview Atlas preserves the original interview record as evidence, extracts concrete atomic Q&A instances, and connects recurring questions to synchronized blocks that hold a stable answer. AI proposes candidates; the user reviews every persisted change.
 
-- Import and AI-assisted structuring of interview experiences
-- Editable atomic question, answer, and reference blocks
-- Reusable synchronized blocks for recurring interview topics
-- Personalized review of high-frequency questions
-- Resume parsing and links between experience sections and interview questions
-- User-defined organization and classification
-- A later recording, transcription, and interview-video workflow
+```text
+Interview record → Atomic Q&A → Synchronized block → Review
+        │                │               │
+      evidence        instance      stable answer
+```
 
-## Development principles
+The current application includes:
 
-- Local-first and user-controlled data
-- Bring-your-own API key for optional AI features
-- Human review for AI extraction, matching, and synchronization
-- Reversible changes through Git and GitHub
-- Product decisions recorded before implementation
-- No secrets, resumes, interview recordings, or private user data in Git
+- responsive desktop and mobile workflows from one React codebase;
+- local persistence in the browser through IndexedDB;
+- interview import, manual structuring, and AI-assisted extraction review;
+- standalone atomic Q&A with editable questions, answers, and notes;
+- synchronized blocks with explicit, bidirectional relationships;
+- resume experiences with CRUD, relationship management, and diff preview;
+- a daily question, recommended synchronized blocks, and an AI review queue;
+- versioned JSON export, explicit demo data, and workspace deletion;
+- OpenAI-compatible providers with session-only API keys.
 
-## Repository map
+## Product rules
 
-- `docs/product/`: discovery notes and future PRDs
-- `docs/adr/`: architecture decision records
-- `docs/engineering/`: engineering and dependency policies
-- `.github/`: issue and pull request templates
-- `AGENTS.md`: contributor and coding-agent rules
+- **Original text is evidence.** Derived content never replaces its source.
+- **AI suggests; the user decides.** No silent overwrite, merge, link, or deletion.
+- **Local-first is the default.** Workspace data stays in IndexedDB unless the user exports it.
+- **AI requests are explicit.** Selected content is sent directly to the configured provider only after a user action.
+- **Manual workflows remain complete.** The knowledge base works without AI configuration.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes.
+## Run locally
+
+Requirements: Node.js 24 and npm 11.
+
+```bash
+npm ci
+npm run dev
+```
+
+Vite serves the app on the local URL printed in the terminal. No backend or account is required.
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the local development server |
+| `npm test` | Run the Vitest suite |
+| `npm run typecheck` | Run TypeScript project checks |
+| `npm run build` | Create a production build |
+
+## Architecture
+
+- React 19.3, TypeScript 7, and Vite 8
+- framework-independent domain operations in `src/domain/`
+- a repository boundary over native IndexedDB in `src/data/`
+- optional OpenAI-compatible integration in `src/ai/`
+- locally bundled Inter, Source Serif 4, and JetBrains Mono fonts
+- responsive PC/H5 interface without a server dependency
+
+## Repository guide
+
+| Path | Contents |
+| --- | --- |
+| `src/` | Application, domain rules, persistence, AI boundary, and tests |
+| `docs/product/` | Product context, approved PRD, and AI capability plan |
+| `docs/adr/` | Accepted architecture decision records |
+| `docs/engineering/` | Delivery and third-party policies |
+| `.github/` | Issue forms and pull request template |
+| `AGENTS.md` | Repository rules for contributors and coding agents |
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. Security and privacy reports follow [SECURITY.md](SECURITY.md).
+
+## Scope
+
+This is an active foundation release, not a hosted service. Cloud sync, collaboration, automatic applications, recording, video, and real-time transcription are deliberately out of scope for the first release.
