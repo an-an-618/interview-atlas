@@ -4,6 +4,7 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 app_name="千面"
+artifact_name="Interview-Atlas"
 version="$(node -p "require('${root_dir}/package.json').version")"
 architecture="$(uname -m)"
 
@@ -13,7 +14,7 @@ fi
 
 app_path="${root_dir}/src-tauri/target/release/bundle/macos/${app_name}.app"
 dmg_dir="${root_dir}/src-tauri/target/release/bundle/dmg"
-dmg_path="${dmg_dir}/${app_name}_${version}_${architecture}.dmg"
+dmg_path="${dmg_dir}/${artifact_name}_${version}_${architecture}.dmg"
 stage_dir="$(mktemp -d "${root_dir}/.dmg-stage.XXXXXX")"
 
 cleanup() {
