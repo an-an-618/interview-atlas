@@ -1,4 +1,11 @@
-import type { Interview, SyncBlock } from "../domain/types";
+import type {
+  Interview,
+  MockInterviewFeedback,
+  MockInterviewQuestionInput,
+  MockInterviewSession,
+  SyncBlock,
+  Workspace,
+} from "../domain/types";
 
 export interface AIProviderConfig {
   protocol: "openai-compatible";
@@ -43,6 +50,22 @@ export interface AIExtractionInput {
   syncBlocks: SyncBlock[];
 }
 
+export interface AIMockInterviewTurnInput {
+  session: MockInterviewSession;
+  workspace: Workspace;
+}
+
+export interface AIMockInterviewTurn {
+  message: string;
+  shouldEnd: boolean;
+  endReason: string;
+}
+
+export interface AIMockInterviewReport {
+  feedback: MockInterviewFeedback;
+  questions: MockInterviewQuestionInput[];
+}
+
 export interface AIClient {
   testConnection(
     config: AIProviderConfig,
@@ -55,6 +78,18 @@ export interface AIClient {
     input: AIExtractionInput,
     signal?: AbortSignal,
   ): Promise<AIExtractionCandidate[]>;
+  continueMockInterview(
+    config: AIProviderConfig,
+    apiKey: string,
+    input: AIMockInterviewTurnInput,
+    signal?: AbortSignal,
+  ): Promise<AIMockInterviewTurn>;
+  generateMockInterviewReport(
+    config: AIProviderConfig,
+    apiKey: string,
+    session: MockInterviewSession,
+    signal?: AbortSignal,
+  ): Promise<AIMockInterviewReport>;
 }
 
 export const defaultAIProviderConfig: AIProviderConfig = {

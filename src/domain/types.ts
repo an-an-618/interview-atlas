@@ -13,6 +13,8 @@ export interface Interview {
   createdAt: string;
   updatedAt: string;
   sample?: boolean;
+  simulated?: boolean;
+  mockInterviewId?: string;
 }
 
 export interface AtomicQuestion {
@@ -85,6 +87,58 @@ export interface ReviewEvent {
   nextReviewAt: string | null;
 }
 
+export type MockInterviewMessageRole = "interviewer" | "candidate";
+
+export interface MockInterviewMessage {
+  id: string;
+  role: MockInterviewMessageRole;
+  content: string;
+  createdAt: string;
+}
+
+export interface MockInterviewFeedbackItem {
+  title: string;
+  detail: string;
+}
+
+export interface MockInterviewQuestionReview {
+  question: string;
+  assessment: string;
+  evidence: string;
+  suggestion: string;
+}
+
+export interface MockInterviewFeedback {
+  summary: string;
+  overallAssessment: string;
+  strengths: MockInterviewFeedbackItem[];
+  improvements: MockInterviewFeedbackItem[];
+  nextSteps: string[];
+  questionReviews: MockInterviewQuestionReview[];
+  generatedAt: string;
+}
+
+export interface MockInterviewSession {
+  id: string;
+  company: string;
+  role: string;
+  round: string;
+  jobDescription: string;
+  additionalInfo: string;
+  interviewerPrompt: string;
+  targetQuestionCount: number;
+  status: "active" | "completed";
+  messages: MockInterviewMessage[];
+  startedAt: string;
+  updatedAt: string;
+  endedAt: string | null;
+  endedBy: "ai" | "user" | null;
+  endReason: string;
+  interviewId: string | null;
+  questionIds: string[];
+  feedback: MockInterviewFeedback | null;
+}
+
 export interface Preference {
   key: string;
   value: unknown;
@@ -97,10 +151,11 @@ export interface Workspace {
   resumeExperiences: ResumeExperience[];
   aiReviews: InterviewAIReview[];
   reviewEvents: ReviewEvent[];
+  mockInterviews: MockInterviewSession[];
 }
 
 export interface WorkspaceExport extends Workspace {
-  formatVersion: 4;
+  formatVersion: 5;
   exportedAt: string;
 }
 
@@ -125,6 +180,7 @@ export interface CreateSyncBlockInput {
   body: string;
   reviewNotes: string;
   questionIds: string[];
+  resumeExperienceIds: string[];
 }
 
 export interface CreateResumeExperienceInput {
@@ -153,4 +209,21 @@ export interface UpdateAIReviewCandidateInput {
   answer?: string;
   tags?: string[];
   connectToSuggested?: boolean;
+}
+
+export interface CreateMockInterviewInput {
+  company: string;
+  role: string;
+  round: string;
+  jobDescription: string;
+  additionalInfo: string;
+  interviewerPrompt: string;
+  targetQuestionCount: number;
+}
+
+export interface MockInterviewQuestionInput {
+  title: string;
+  answer: string;
+  tags: string[];
+  sourceExcerpt: string;
 }

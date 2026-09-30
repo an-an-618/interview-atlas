@@ -18,5 +18,6 @@ Architecture Decision Records preserve important technical choices and their rea
 - [ADR 0003: AI provider and credential boundary](0003-ai-provider-boundary.md)
 - [ADR 0004: macOS desktop wrapper with Tauri](0004-macos-tauri-wrapper.md)
 - [ADR 0005: Windows desktop distribution](0005-windows-desktop-distribution.md)
+- [ADR 0006: AI mock interview lifecycle](0006-mock-interview-lifecycle.md)
 
 The rich-text editor, persistent secure credential storage, Linux packaging, and update mechanism remain open.

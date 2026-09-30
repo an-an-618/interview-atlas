@@ -9,7 +9,7 @@
 - MSI 安装包；
 - GitHub Actions 原生 Windows 构建与产物校验。
 
-当前预览包未经 Authenticode 签名。Windows 可能显示 Microsoft Defender SmartScreen 警告，不应将未签名包视为正式公开版本。
+当前安装包未经 Authenticode 签名。Windows 可能显示 Microsoft Defender SmartScreen 警告；公开发布时必须明确披露这一限制。
 
 安装包与开始菜单使用 ASCII 名称 `Interview Atlas`，避免 WiX 3 处理中文输出路径时构建失败；应用窗口标题仍显示“千面”。
 

@@ -14,7 +14,7 @@
 
 ## 它如何工作
 
-千面把原始面经视为证据，把每一次真实问答拆成原子实例，再把反复出现的问题连接到维护稳定回答的同步块。AI 只生成候选，任何入库和关联都由用户确认。
+千面把原始面经视为证据，把每一次真实问答拆成原子实例，再把反复出现的问题连接到维护稳定回答的同步块。普通 AI 拆解结果由用户审核；用户明确开始的模拟面试会自动保存逐字稿和原子问答，但不会自动建立同步块关系。
 
 ```text
 面试记录 → 原子问答 → 同步块 → 复习
@@ -33,39 +33,40 @@
 - 显式建立同步块与原子问答的双向关系；
 - 简历经历的增删改查、关系管理与修改 Diff 预览；
 - 每日一问、每日推荐同步块和 AI 待审核队列；
-- 版本化 JSON 导出、显式示例数据与工作区清空；
+- 结合历史面试、简历与问答的 AI 模拟面试，以及会后反馈和自动入库；
+- 版本化 JSON 导出与校验恢复、显式示例数据与工作区清空；
 - OpenAI-compatible 模型服务与仅会话保存的 API Key。
 
 ## 产品原则
 
 - **原文是证据。** 派生内容不能替代或覆盖来源。
-- **AI 建议，用户决策。** 不静默覆盖、合并、关联或删除内容。
+- **AI 建议，用户决策。** 不静默覆盖、合并、关联或删除用户内容；用户明确开始的模拟面试会按约定自动保存逐字稿和原子问答。
 - **默认本地保存。** 工作区保存在 IndexedDB，只有用户主动导出才会离开浏览器。
 - **AI 请求必须显式触发。** 仅将当前任务需要的内容直连发送给用户配置的服务商。
 - **无 AI 也能完整使用。** 手动整理、关联、复习和导出流程保持可用。
 
 ## macOS 下载安装
 
-当前桌面预览版支持 Apple Silicon Mac，系统要求为 macOS 13 及以上。
+1.0 桌面版支持 Apple Silicon Mac，系统要求为 macOS 13 及以上。
 
-1. 打开 [GitHub Releases](https://github.com/an-an-618/interview-atlas/releases)，下载最新的 `Interview-Atlas_<版本>_aarch64.dmg` 和 `SHA256SUMS.txt`。
+1. 打开 [GitHub Releases](https://github.com/an-an-618/interview-atlas/releases/latest)，下载 `Interview-Atlas_1.0.0_aarch64.dmg` 和 `SHA256SUMS-macos.txt`。
 2. 打开 DMG，将“千面.app”拖到“Applications”快捷入口。
-3. 当前预览版尚未经过 Apple 公证。首次启动时，在 Finder 中右键“千面.app”，选择“打开”，再确认一次“打开”。必要时前往“系统设置 → 隐私与安全性 → 仍要打开”。
+3. 当前版本尚未经过 Apple 公证。首次启动时，在 Finder 中右键“千面.app”，选择“打开”，再确认一次“打开”。必要时前往“系统设置 → 隐私与安全性 → 仍要打开”。
 4. 后续可从“应用程序”、Spotlight、启动台或 Dock 打开千面。
 
 不要关闭系统级 Gatekeeper。可在下载目录执行以下命令校验安装包：
 
 ```bash
-shasum -a 256 -c SHA256SUMS.txt
+shasum -a 256 -c SHA256SUMS-macos.txt
 ```
 
-桌面版与浏览器版使用独立的 IndexedDB 工作区，浏览器数据不会自动迁移。维护者构建、正式签名与 Apple 公证流程见 [macOS 构建与发布](docs/engineering/macos-distribution.md)。
+桌面版与浏览器版使用独立的 IndexedDB 工作区，数据不会自动同步。可先在一端导出 JSON，再从另一端的设置页迁移并恢复。维护者构建、正式签名与 Apple 公证流程见 [macOS 构建与发布](docs/engineering/macos-distribution.md)。
 
 ## Windows 下载安装
 
-Windows 预览版支持 x64 Windows 10/11。打开一次成功的 [CI 运行](https://github.com/an-an-618/interview-atlas/actions/workflows/ci.yml)，下载 `interview-atlas-windows-x64` 产物并运行其中的 NSIS `*-setup.exe`；压缩包内也提供适合管理部署的 MSI。
+1.0 桌面版支持 x64 Windows 10/11。打开 [GitHub Releases](https://github.com/an-an-618/interview-atlas/releases/latest)，普通用户下载并运行 `Interview-Atlas_1.0.0_x64-setup.exe`；管理部署可使用 MSI。
 
-当前预览版尚未进行 Authenticode 签名，Microsoft Defender SmartScreen 可能在首次启动时提示风险。构建、安装与后续签名说明见 [Windows 构建与发布](docs/engineering/windows-distribution.md)。
+当前版本尚未进行 Authenticode 签名，Microsoft Defender SmartScreen 可能在首次启动时提示风险。构建、安装与后续签名说明见 [Windows 构建与发布](docs/engineering/windows-distribution.md)。
 
 ## 本地运行
 
@@ -116,4 +117,4 @@ Vite 会在终端输出本地访问地址。项目不需要后端服务或账号
 
 ## 一期边界
 
-当前是持续开发中的基础版本，不是托管在线服务。桌面预览支持 Apple Silicon macOS 与 x64 Windows；Linux、Intel/Universal macOS、正式签名、公证和自动更新仍待后续实现。一期明确不包含云同步、多人协作、企业端、自动投递、录屏、视频和实时转写。
+1.0 桌面版支持 Apple Silicon macOS 与 x64 Windows，仍是本地优先应用，不是托管在线服务。Linux、Intel/Universal macOS、正式签名、公证和自动更新仍待后续实现；当前不包含云同步、多人协作、企业端、自动投递、录屏、视频和实时转写。

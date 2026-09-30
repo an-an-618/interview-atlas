@@ -1,6 +1,6 @@
 [package]
 name = "interview-atlas"
-version = "0.1.0"
+version = "1.0.0"
 description = "Local-first interview knowledge workspace"
 authors = ["Interview Atlas contributors"]
 license = ""
