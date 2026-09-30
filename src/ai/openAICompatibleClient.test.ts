@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Interview } from "../domain/types";
 import {
   createOpenAICompatibleClient,
+  INTERVIEW_EXTRACTION_SYSTEM_PROMPT,
   parseExtractionResponse,
   resolveChatCompletionsUrl,
 } from "./openAICompatibleClient";
@@ -28,6 +29,24 @@ const interview: Interview = {
 };
 
 describe("OpenAI-compatible client", () => {
+  it("defines strict extraction, normalization, tagging, and sync matching rules", () => {
+    expect(INTERVIEW_EXTRACTION_SYSTEM_PROMPT).toContain(
+      "准确性和可追溯性优先于数量",
+    );
+    expect(INTERVIEW_EXTRACTION_SYSTEM_PROMPT).toContain(
+      "删除不承载语义的口语填充",
+    );
+    expect(INTERVIEW_EXTRACTION_SYSTEM_PROMPT).toContain(
+      "每题提取 1 到 4 个标签",
+    );
+    expect(INTERVIEW_EXTRACTION_SYSTEM_PROMPT).toContain(
+      "核心主题、提问意图、回答范围和关键约束上均高度一致",
+    );
+    expect(INTERVIEW_EXTRACTION_SYSTEM_PROMPT).toContain(
+      "多个同步块都可能匹配",
+    );
+  });
+
   it("normalizes base URLs and accepts a complete chat completions URL", () => {
     expect(resolveChatCompletionsUrl("https://example.com/v1/")).toBe(
       "https://example.com/v1/chat/completions",
@@ -61,9 +80,33 @@ describe("OpenAI-compatible client", () => {
         tags: ["性能"],
         sourceExcerpt: "原文",
         suggestedSyncBlockId: null,
-        matchReason: "相似",
+        matchReason: "",
       },
     ]);
+  });
+
+  it("deduplicates and limits tags while keeping reasons only for valid matches", () => {
+    const result = parseExtractionResponse(
+      JSON.stringify({
+        questions: [
+          {
+            title: "React Fiber 如何调度更新？",
+            answer: "",
+            tags: ["React", "Fiber", "调度", "前端框架", "性能", "React"],
+            sourceExcerpt: "问 React Fiber 如何调度更新",
+            suggestedSyncBlockId: "sync-1",
+            matchReason: "都要求解释 Fiber 更新调度机制",
+          },
+        ],
+      }),
+      new Set(["sync-1"]),
+    );
+
+    expect(result[0]).toMatchObject({
+      tags: ["React", "Fiber", "调度", "前端框架"],
+      suggestedSyncBlockId: "sync-1",
+      matchReason: "都要求解释 Fiber 更新调度机制",
+    });
   });
 
   it("rejects malformed structured output", () => {
