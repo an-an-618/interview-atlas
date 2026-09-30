@@ -7,6 +7,7 @@
 ![React](https://img.shields.io/badge/React-19.3-149ECA)
 ![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178C6)
 ![Storage](https://img.shields.io/badge/storage-IndexedDB-6B7D3A)
+![Desktop](https://img.shields.io/badge/macOS-Tauri_2-24C8DB)
 
 ![千面概览页](docs/assets/interview-atlas-overview.png)
 
@@ -23,6 +24,7 @@
 当前应用已经支持：
 
 - 同一套 React 代码适配 PC 与 H5；
+- 使用 Tauri 2 生成 Apple Silicon macOS `.app` 与 `.dmg`；
 - 使用浏览器原生 IndexedDB 保存本地工作区；
 - 导入面经、手动拆解与 AI 辅助拆解审核；
 - 独立创建和编辑原子问答的问题、答案与笔记；
@@ -54,9 +56,13 @@ Vite 会在终端输出本地访问地址。项目不需要后端服务或账号
 | 命令 | 用途 |
 | --- | --- |
 | `npm run dev` | 启动本地开发服务 |
+| `npm run desktop:dev` | 启动 macOS 桌面开发模式 |
+| `npm run desktop:build` | 生成 macOS `.app` 与 `.dmg` |
 | `npm test` | 运行 Vitest 测试 |
 | `npm run typecheck` | 执行 TypeScript 类型检查 |
 | `npm run build` | 生成生产构建 |
+
+桌面构建还需要 Rust 与 Xcode Command Line Tools。环境准备、产物位置、签名和公证说明见 [macOS 构建与发布](docs/engineering/macos-distribution.md)。
 
 ## 技术架构
 
@@ -64,6 +70,7 @@ Vite 会在终端输出本地访问地址。项目不需要后端服务或账号
 - `src/domain/` 承载不依赖框架的领域规则
 - `src/data/` 通过 repository 边界封装原生 IndexedDB
 - `src/ai/` 封装可选的 OpenAI-compatible 接口
+- `src-tauri/` 提供轻量 macOS 桌面外壳
 - Inter、Source Serif 4、JetBrains Mono 字体本地打包
 - 无服务端依赖的响应式 PC/H5 界面
 
@@ -72,6 +79,7 @@ Vite 会在终端输出本地访问地址。项目不需要后端服务或账号
 | 路径 | 内容 |
 | --- | --- |
 | `src/` | 应用、领域规则、持久化、AI 边界与测试 |
+| `src-tauri/` | macOS 桌面外壳、Bundle 配置与应用图标 |
 | `docs/product/` | 产品上下文、已批准 PRD 与 AI 能力规划 |
 | `docs/adr/` | 已接受的架构决策记录 |
 | `docs/engineering/` | 交付与第三方能力政策 |
@@ -82,4 +90,4 @@ Vite 会在终端输出本地访问地址。项目不需要后端服务或账号
 
 ## 一期边界
 
-当前是持续开发中的基础版本，不是托管在线服务。一期明确不包含云同步、多人协作、企业端、自动投递、录屏、视频和实时转写。
+当前是持续开发中的基础版本，不是托管在线服务。首个桌面预览仅支持 Apple Silicon macOS；Windows、Linux、Intel/Universal macOS、正式签名、公证和自动更新仍待后续实现。一期明确不包含云同步、多人协作、企业端、自动投递、录屏、视频和实时转写。
