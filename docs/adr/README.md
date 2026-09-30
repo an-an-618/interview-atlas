@@ -16,5 +16,6 @@ Architecture Decision Records preserve important technical choices and their rea
 - [ADR 0001: Responsive web application foundation](0001-responsive-web-foundation.md)
 - [ADR 0002: IndexedDB workspace storage](0002-indexeddb-workspace-storage.md)
 - [ADR 0003: AI provider and credential boundary](0003-ai-provider-boundary.md)
+- [ADR 0004: macOS desktop wrapper with Tauri](0004-macos-tauri-wrapper.md)
 
-The rich-text editor, persistent secure credential storage, desktop wrapper, and update mechanism remain open.
+The rich-text editor, persistent secure credential storage, cross-platform packaging, and update mechanism remain open.

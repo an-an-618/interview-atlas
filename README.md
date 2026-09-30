@@ -7,6 +7,7 @@
 ![React](https://img.shields.io/badge/React-19.3-149ECA)
 ![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178C6)
 ![Storage](https://img.shields.io/badge/storage-IndexedDB-6B7D3A)
+![Desktop](https://img.shields.io/badge/macOS-Tauri_2-24C8DB)
 
 ![Interview Atlas overview](docs/assets/interview-atlas-overview.png)
 
@@ -23,6 +24,7 @@ Interview record → Atomic Q&A → Synchronized block → Review
 The current application includes:
 
 - responsive desktop and mobile workflows from one React codebase;
+- a macOS Apple Silicon `.app` and `.dmg` built with Tauri 2;
 - local persistence in the browser through IndexedDB;
 - interview import, manual structuring, and AI-assisted extraction review;
 - standalone atomic Q&A with editable questions, answers, and notes;
@@ -54,9 +56,13 @@ Vite serves the app on the local URL printed in the terminal. No backend or acco
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Start the local development server |
+| `npm run desktop:dev` | Start the macOS desktop application in development mode |
+| `npm run desktop:build` | Build the macOS `.app` and `.dmg` |
 | `npm test` | Run the Vitest suite |
 | `npm run typecheck` | Run TypeScript project checks |
 | `npm run build` | Create a production build |
+
+Desktop builds also require Rust and the Xcode Command Line Tools. See the [macOS distribution guide](docs/engineering/macos-distribution.md) for setup, artifacts, signing, and notarization.
 
 ## Architecture
 
@@ -64,6 +70,7 @@ Vite serves the app on the local URL printed in the terminal. No backend or acco
 - framework-independent domain operations in `src/domain/`
 - a repository boundary over native IndexedDB in `src/data/`
 - optional OpenAI-compatible integration in `src/ai/`
+- a thin Tauri 2 wrapper in `src-tauri/`
 - locally bundled Inter, Source Serif 4, and JetBrains Mono fonts
 - responsive PC/H5 interface without a server dependency
 
@@ -72,6 +79,7 @@ Vite serves the app on the local URL printed in the terminal. No backend or acco
 | Path | Contents |
 | --- | --- |
 | `src/` | Application, domain rules, persistence, AI boundary, and tests |
+| `src-tauri/` | macOS desktop shell, bundle metadata, and application icon |
 | `docs/product/` | Product context, approved PRD, and AI capability plan |
 | `docs/adr/` | Accepted architecture decision records |
 | `docs/engineering/` | Delivery and third-party policies |
@@ -82,4 +90,4 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. Security and p
 
 ## Scope
 
-This is an active foundation release, not a hosted service. Cloud sync, collaboration, automatic applications, recording, video, and real-time transcription are deliberately out of scope for the first release.
+This is an active foundation release, not a hosted service. The first desktop preview targets Apple Silicon macOS; Windows, Linux, Intel/Universal macOS, signing, notarization, and automatic updates remain future work. Cloud sync, collaboration, automatic applications, recording, video, and real-time transcription are deliberately out of scope for the first release.

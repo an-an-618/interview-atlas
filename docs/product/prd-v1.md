@@ -521,7 +521,8 @@
 - 支持删除单个对象；
 - 支持清空全部本地数据；
 - 清空前要求二次确认和明确不可恢复提示；
-- 删除 API Key 时同时移除系统安全存储中的凭据；
+- 当前浏览器与桌面 WebView 版本删除 API Key 时，同时移除会话存储中的凭据；
+- 后续若引入系统安全存储，删除操作必须同时移除其中的凭据；
 - 产品需说明普通删除与安全擦除在不同文件系统上的实际边界。
 
 ---
@@ -846,10 +847,11 @@
 
 ### 15.4 兼容性
 
-待 ADR 确定运行形态后定义最低系统版本。至少应覆盖：
+当前兼容性基线：
 
 - 当前和前一主版本的 Chrome/Edge；
-- 若为桌面应用，覆盖最新两个受支持的 macOS 和 Windows 主版本；
+- 首个桌面预览支持 Apple Silicon macOS 13 及以上；
+- Windows、Linux 与 Intel/Universal macOS 安装包待独立验证后开放；
 - H5 覆盖 iOS Safari 与 Android Chrome 的当前主版本。
 
 ### 15.5 国际化
@@ -1016,18 +1018,22 @@
 
 ## 20. 依赖与 ADR 清单
 
-开发前必须评审：
+已接受：
 
-1. 应用运行形态：本地 Web、PWA、Tauri 或其他桌面容器；
-2. 本地数据存储与迁移策略；
-3. API Key 的系统安全存储方案；
-4. 富文本或 Markdown 编辑方案；
-5. AI Provider 适配层与请求边界；
-6. 全文搜索方案；
-7. 备份、恢复和格式版本；
-8. PC/H5 是否共用代码与数据层；
-9. 本地应用更新机制；
-10. 可选遥测与隐私同意方案。
+1. 响应式 Web 基础与 PC/H5 共用代码：[ADR 0001](../adr/0001-responsive-web-foundation.md)；
+2. IndexedDB 本地存储与 repository 边界：[ADR 0002](../adr/0002-indexeddb-workspace-storage.md)；
+3. AI Provider 与浏览器会话凭据边界：[ADR 0003](../adr/0003-ai-provider-boundary.md)；
+4. Apple Silicon macOS 的 Tauri 桌面封装：[ADR 0004](../adr/0004-macos-tauri-wrapper.md)。
+
+仍待评审：
+
+1. 富文本或 Markdown 编辑方案；
+2. 全文搜索方案；
+3. 备份恢复和浏览器/桌面数据迁移；
+4. 系统安全凭据存储；
+5. Intel/Universal macOS、Windows 与 Linux 打包；
+6. 桌面应用签名、公证与自动更新；
+7. 可选遥测与隐私同意方案。
 
 ---
 

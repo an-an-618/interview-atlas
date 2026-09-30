@@ -16,6 +16,8 @@ Do not add a rich-text editor, AI SDK, desktop wrapper, credential store, cloud 
 - `src/data/` contains local persistence implementations.
 - `src/components/` contains reusable interface components.
 - `src/` entry files compose the responsive application.
+- `src-tauri/` contains the macOS desktop shell and bundle metadata.
+- `scripts/` contains reproducible packaging helpers.
 
 Do not place cloned reference repositories, generated files, resumes, interview transcripts, recordings, API keys, or local databases in this repository.
 
