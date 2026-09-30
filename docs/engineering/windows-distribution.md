@@ -11,6 +11,8 @@
 
 当前预览包未经 Authenticode 签名。Windows 可能显示 Microsoft Defender SmartScreen 警告，不应将未签名包视为正式公开版本。
 
+安装包与开始菜单使用 ASCII 名称 `Interview Atlas`，避免 WiX 3 处理中文输出路径时构建失败；应用窗口标题仍显示“千面”。
+
 ## 本机构建
 
 需要 Node.js 24、npm 11、Rust 1.90，以及包含 MSVC C++ 构建工具的 Visual Studio Build Tools。先安装依赖：

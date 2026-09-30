@@ -14,6 +14,7 @@ The first Windows preview needs standard installers that can be built and checke
 
 - Support x64 Windows with the existing Tauri application.
 - Produce an NSIS `.exe` for normal installation and an MSI package for managed environments.
+- Use `Interview Atlas` as the Windows package and installed application name because WiX 3 cannot reliably link MSI output paths containing the Chinese product name. Keep `千面` as the in-app window title.
 - Use the system WebView2 runtime and let the installer download its bootstrapper when the runtime is missing.
 - Install the NSIS package for the current user by default, without requiring administrator privileges.
 - Build and retain both installers in GitHub Actions.

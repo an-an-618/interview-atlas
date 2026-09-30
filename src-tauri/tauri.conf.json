@@ -37,20 +37,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "windows": {
-      "webviewInstallMode": {
-        "type": "downloadBootstrapper",
-        "silent": true
-      },
-      "nsis": {
-        "installerIcon": "icons/icon.ico",
-        "installMode": "currentUser",
-        "languages": [
-          "SimpChinese",
-          "English"
-        ]
-      }
-    },
     "macOS": {
       "minimumSystemVersion": "13.0",
       "dmg": {
