@@ -9,11 +9,11 @@
 secrets/
 
 # User data
-data/
-uploads/
-recordings/
-transcripts/
-resumes/
+/data/
+/uploads/
+/recordings/
+/transcripts/
+/resumes/
 *.sqlite
 *.sqlite3
 *.db
@@ -23,6 +23,7 @@ node_modules/
 dist/
 build/
 coverage/
+*.tsbuildinfo
 .next/
 .turbo/
 target/
@@ -38,3 +39,5 @@ Thumbs.db
 # Local AI and agent state
 .codex/
 .agents/
+.artifacts/
+.chrome-*/

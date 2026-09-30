@@ -11,4 +11,10 @@ Architecture Decision Records preserve important technical choices and their rea
 5. Mark accepted decisions as `Accepted`.
 6. Replace an obsolete decision with a new ADR and mark the old one `Superseded`.
 
-No architecture decision has been accepted yet. The application form, technology stack, storage model, rich-text editor, and AI provider interface remain open.
+## Accepted decisions
+
+- [ADR 0001: Responsive web application foundation](0001-responsive-web-foundation.md)
+- [ADR 0002: IndexedDB workspace storage](0002-indexeddb-workspace-storage.md)
+- [ADR 0003: AI provider and credential boundary](0003-ai-provider-boundary.md)
+
+The rich-text editor, persistent secure credential storage, desktop wrapper, and update mechanism remain open.
