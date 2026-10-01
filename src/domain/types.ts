@@ -1,5 +1,14 @@
 export type InterviewStatus = "draft" | "pending" | "reviewed" | "archived";
 
+export interface ExtractionTask {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
+  updatedAt: string;
+  progress?: { completed: number; total: number; phase: "extracting" | "retrying" | "splitting" };
+  error?: string;
+  unread?: boolean;
+}
+
 export interface Interview {
   id: string;
   company: string;
@@ -15,6 +24,7 @@ export interface Interview {
   sample?: boolean;
   simulated?: boolean;
   mockInterviewId?: string;
+  extractionTask?: ExtractionTask;
 }
 
 export interface AtomicQuestion {

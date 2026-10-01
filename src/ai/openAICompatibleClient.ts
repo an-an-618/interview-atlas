@@ -174,7 +174,7 @@ function extractMessageContent(payload: unknown): string {
 
   if (firstChoice.finish_reason === "length") {
     throw new StructuredOutputError(
-      "AI 返回内容达到输出长度上限，结果不完整。请将面经分段后重新拆解。",
+      "AI 返回内容达到输出长度上限，结果不完整。请稍后重试或更换模型。",
       "length",
     );
   }
@@ -233,7 +233,7 @@ export function parseExtractionResponse(
     throw new StructuredOutputError("AI 结果缺少问题列表，请重试或更换模型。");
   }
   if (parsed.questions.length > MAX_CANDIDATES) {
-    throw new StructuredOutputError("AI 单段返回的问题过多，需要进一步分段。", "length");
+    throw new StructuredOutputError("AI 返回的问题过多，暂时无法完成解析。", "length");
   }
 
   const candidates = parsed.questions
@@ -780,7 +780,7 @@ export function createOpenAICompatibleClient(
         for (let attempt = 0; ; attempt += 1) {
           if (signal?.aborted) throw new Error("AI 请求已取消。");
           if (++requests > 80 || Date.now() >= deadline) {
-            throw new Error(`本次拆解已达到处理时限或请求次数上限（已完成 ${completed}/${total} 段），请稍后重试或更换模型。`);
+            throw new Error("本次解析已达到处理上限，请稍后重试或更换模型。");
           }
           try {
             const content = await requestCompletion(
@@ -791,7 +791,7 @@ export function createOpenAICompatibleClient(
             // A filled per-segment limit can hide further questions. Subdivide
             // instead of treating a capped list as a complete extraction.
             if (candidates.length >= MAX_CANDIDATES) {
-              throw new StructuredOutputError("单段问题数量达到上限，请缩小面经范围后重试。", "length");
+              throw new StructuredOutputError("AI 返回的问题过多，请精简面经后重试或更换模型。", "length");
             }
             for (const candidate of candidates) {
               const key = JSON.stringify(candidate);
@@ -829,7 +829,7 @@ export function createOpenAICompatibleClient(
             }
             const detail = reason instanceof Error ? reason.message : "AI 拆解失败。";
             throw new Error(total > 1
-              ? `第 ${completed + 1}/${total} 段未完成：${detail} 本次结果尚未写入审核清单，原文草稿仍保留。`
+              ? `本次解析未完成：${detail} 本次结果尚未写入审核清单，原文草稿仍保留。`
               : detail);
           }
         }

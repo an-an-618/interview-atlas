@@ -30,7 +30,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createOpenAICompatibleClient } from "./ai/openAICompatibleClient";
 import type {
-  AIClient,
   AIExtractionProgress,
   AIProviderConfig,
   AIProviderCredentialId,
@@ -48,7 +47,6 @@ import type {
   InterviewAIReview,
   InterviewStatus,
   ResumeExperience,
-  SaveAIReviewCandidateInput,
   SyncBlock,
   UpdateAIReviewCandidateInput,
   Workspace,
@@ -60,6 +58,8 @@ import {
 } from "./domain/workspace";
 import { useAISettings } from "./hooks/useAISettings";
 import { useWorkspace } from "./hooks/useWorkspace";
+import { useExtractionQueue } from "./hooks/useExtractionQueue";
+import { extractionActive, extractionLabel, sortInterviews } from "./ai/extractionQueue";
 
 type View =
   | "overview"
@@ -147,9 +147,9 @@ function PageHeader({
   );
 }
 
-function StatusBadge({ status }: { status: InterviewStatus }) {
+function StatusBadge({ status, task }: { status: InterviewStatus; task?: Interview["extractionTask"] }) {
   return (
-    <span className={`status status-${status}`}>{statusLabel[status]}</span>
+    <span className={`status status-${status}`}>{task && task.status !== "completed" ? extractionLabel(task) : statusLabel[status]}</span>
   );
 }
 
@@ -186,6 +186,10 @@ function OverviewPage({
   onUpdateAIReviewCandidate,
   onResolveAIReviewCandidate,
   onAcceptAllAIReviewCandidates,
+  onStartExtraction,
+  onCancelExtraction,
+  aiConfigured,
+  onOpenAISettings,
 }: {
   dailyQuestion: AtomicQuestion | null;
   interviews: Interview[];
@@ -209,29 +213,29 @@ function OverviewPage({
     connectToSuggested?: boolean,
   ) => void;
   onAcceptAllAIReviewCandidates: (interviewId: string) => void;
+  onStartExtraction: (interview: Interview) => string;
+  onCancelExtraction: (interviewId: string) => void;
+  aiConfigured: boolean;
+  onOpenAISettings: () => void;
 }) {
   const [reviewDrawerOpen, setReviewDrawerOpen] = useState(false);
   const [activeReviewInterviewId, setActiveReviewInterviewId] = useState<
     string | null
   >(null);
   const recent = [...interviews]
-    .sort((left, right) => right.date.localeCompare(left.date))
+    .sort(sortInterviews)
     .slice(0, 3);
-  const pendingReviews = aiReviews
-    .flatMap((review) => {
-      const interview = interviews.find(
-        (item) => item.id === review.interviewId,
-      );
-      const pendingCount = review.candidates.filter(
+  const pendingReviews = interviews
+    .flatMap((interview) => {
+      const review = aiReviews.find((item) => item.interviewId === interview.id);
+      const pendingCount = review?.candidates.filter(
         (candidate) => candidate.decision === "pending",
-      ).length;
-      return interview && pendingCount
+      ).length ?? 0;
+      return pendingCount || (interview.extractionTask && interview.extractionTask.status !== "completed")
         ? [{ interview, review, pendingCount }]
         : [];
     })
-    .sort((left, right) =>
-      right.review.updatedAt.localeCompare(left.review.updatedAt),
-    );
+    .sort((left, right) => sortInterviews(left.interview, right.interview));
   const activePendingReview =
     pendingReviews.find(
       ({ interview }) => interview.id === activeReviewInterviewId,
@@ -389,7 +393,7 @@ function OverviewPage({
                         {interview.questionIds.length} 个问题
                       </small>
                     </span>
-                    <StatusBadge status={interview.status} />
+                    <StatusBadge status={interview.status} task={interview.extractionTask} />
                   </button>
                 ))}
               </div>
@@ -423,7 +427,7 @@ function OverviewPage({
                               .join(" · ") || formatDate(interview.date)}
                           </small>
                         </span>
-                        <em>{pendingCount} 条</em>
+                        <em>{interview.extractionTask && interview.extractionTask.status !== "completed" ? extractionLabel(interview.extractionTask) : `${pendingCount} 条`}</em>
                       </div>
                     ))}
                 </div>
@@ -460,7 +464,7 @@ function OverviewPage({
                     <h2 id="overview-review-drawer-title">待审核</h2>
                     <span>
                       {pendingReviews.length
-                        ? `${pendingReviews.length} 场面试仍有 AI 候选待确认`
+                        ? `${pendingReviews.length} 场面试正在处理或等待审核`
                         : "当前没有待确认的 AI 候选"}
                     </span>
                   </div>
@@ -501,7 +505,7 @@ function OverviewPage({
                                 .join(" · ") || formatDate(interview.date)}
                             </small>
                           </span>
-                          <em>{pendingCount} 条</em>
+                          <em>{interview.extractionTask && interview.extractionTask.status !== "completed" ? extractionLabel(interview.extractionTask) : `${pendingCount} 条`}</em>
                         </button>
                       ))}
                     </nav>
@@ -534,12 +538,15 @@ function OverviewPage({
                       <InterviewAIAssistant
                         review={activePendingReview.review}
                         syncBlocks={syncBlocks}
-                        reviewRequired={false}
-                        configured
-                        loading={false}
-                        error={null}
-                        onStart={() => undefined}
-                        onOpenSettings={() => undefined}
+                        reviewRequired
+                        configured={aiConfigured}
+                        loading={extractionActive(activePendingReview.interview.extractionTask)}
+                        progress={activePendingReview.interview.extractionTask?.progress}
+                        queued={activePendingReview.interview.extractionTask?.status === "queued"}
+                        error={activePendingReview.interview.extractionTask?.error ?? null}
+                        onCancel={() => onCancelExtraction(activePendingReview.interview.id)}
+                        onStart={() => onStartExtraction(activePendingReview.interview)}
+                        onOpenSettings={onOpenAISettings}
                         onUpdate={(candidateId, input) =>
                           onUpdateAIReviewCandidate(
                             activePendingReview.interview.id,
@@ -727,7 +734,7 @@ function InterviewsPage({
       return haystack.includes(query.trim().toLowerCase());
     })
     .sort((left, right) =>
-      right.interview.date.localeCompare(left.interview.date),
+      sortInterviews(left.interview, right.interview),
     );
 
   return (
@@ -900,7 +907,7 @@ function InterviewsPage({
                 {tags.length > 3 ? <small>+{tags.length - 3}</small> : null}
               </span>
               <span className="interview-row-end">
-                <StatusBadge status={interview.status} />
+                <StatusBadge status={interview.status} task={interview.extractionTask} />
                 <span className="interview-count">
                   {visibleQuestionCount} 个问题
                 </span>
@@ -1093,6 +1100,7 @@ function InterviewAIAssistant({
   configured,
   loading,
   progress,
+  queued,
   error,
   onCancel,
   onStart,
@@ -1107,6 +1115,7 @@ function InterviewAIAssistant({
   configured: boolean;
   loading: boolean;
   progress?: AIExtractionProgress | null;
+  queued?: boolean;
   error: string | null;
   onCancel?: () => void;
   onStart: () => void;
@@ -1139,8 +1148,9 @@ function InterviewAIAssistant({
       {loading ? (
         <div className="interview-ai-empty">
           <LoaderCircle className="spin" size={21} aria-hidden="true" />
-          <strong>正在拆解面经</strong>
-          <p aria-live="polite">{extractionProgressLabel(progress ?? null)}</p>
+          <strong>{queued ? "排队中" : "正在拆解面经"}</strong>
+          <p aria-live="polite">{queued ? "前一条面经完成后会自动开始。" : extractionProgressLabel(progress ?? null)}</p>
+          <p>切换页面后会继续处理，完成时会通知你。</p>
           {onCancel ? <button className="text-button" type="button" onClick={onCancel}>取消拆解</button> : null}
         </div>
       ) : !review && reviewRequired ? (
@@ -1224,20 +1234,19 @@ function InterviewAIAssistant({
 
 function InterviewDetail({
   interview,
+  reviewRequest,
   questions,
   syncBlocks,
   resumeExperiences,
   aiReview,
-  aiClient,
-  aiConfig,
-  aiApiKey,
+  onStartExtraction,
+  onCancelExtraction,
   aiConfigured,
   onBack,
   onAddQuestion,
   onOpenSync,
   onOpenResume,
   onCreateSync,
-  onSaveAIReview,
   onUpdateAIReviewCandidate,
   onResolveAIReviewCandidate,
   onAcceptAllAIReviewCandidates,
@@ -1245,23 +1254,19 @@ function InterviewDetail({
   onOpenMockInterview,
 }: {
   interview: Interview;
+  reviewRequest: number;
   questions: AtomicQuestion[];
   syncBlocks: SyncBlock[];
   resumeExperiences: ResumeExperience[];
   aiReview?: InterviewAIReview;
-  aiClient: AIClient;
-  aiConfig: AIProviderConfig;
-  aiApiKey: string;
+  onStartExtraction: (interview: Interview) => string;
+  onCancelExtraction: (interviewId: string) => void;
   aiConfigured: boolean;
   onBack: () => void;
   onAddQuestion: () => void;
   onOpenSync: (id: string) => void;
   onOpenResume: (id: string) => void;
   onCreateSync: (questionId: string) => void;
-  onSaveAIReview: (
-    interviewId: string,
-    candidates: SaveAIReviewCandidateInput[],
-  ) => void;
   onUpdateAIReviewCandidate: (
     interviewId: string,
     candidateId: string,
@@ -1278,11 +1283,13 @@ function InterviewDetail({
   onOpenMockInterview: (id: string) => void;
 }) {
   const [sourceExpanded, setSourceExpanded] = useState(false);
-  const [aiLoading, setAILoading] = useState(false);
-  const [aiProgress, setAIProgress] = useState<AIExtractionProgress | null>(null);
-  const [aiError, setAIError] = useState<string | null>(null);
+  const aiLoading = extractionActive(interview.extractionTask);
+  const aiProgress = interview.extractionTask?.progress ?? null;
+  const aiError = interview.extractionTask?.error ?? null;
   const [mobileAIOpen, setMobileAIOpen] = useState(false);
-  const aiControllerRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    if (reviewRequest && window.matchMedia("(max-width: 1280px)").matches) setMobileAIOpen(true);
+  }, [reviewRequest]);
   const interviewQuestions = interview.questionIds
     .map((id) => questions.find((question) => question.id === id))
     .filter((question): question is AtomicQuestion => Boolean(question));
@@ -1313,13 +1320,6 @@ function InterviewDetail({
     ),
   );
 
-  useEffect(
-    () => () => {
-      aiControllerRef.current?.abort();
-    },
-    [],
-  );
-
   useEffect(() => {
     if (!mobileAIOpen) return;
     const previousOverflow = document.body.style.overflow;
@@ -1334,48 +1334,6 @@ function InterviewDetail({
     };
   }, [mobileAIOpen]);
 
-  const startAIReview = async () => {
-    if (!aiConfigured || aiLoading) return;
-    const controller = new AbortController();
-    aiControllerRef.current = controller;
-    setAILoading(true);
-    setAIProgress(null);
-    setAIError(null);
-    try {
-      const extracted = await aiClient.extractInterview(
-        aiConfig,
-        aiApiKey,
-        { interview, syncBlocks },
-        controller.signal,
-        (progress) => {
-          if (!controller.signal.aborted && aiControllerRef.current === controller) {
-            setAIProgress(progress);
-          }
-        },
-      );
-      if (controller.signal.aborted || aiControllerRef.current !== controller) return;
-      onSaveAIReview(
-        interview.id,
-        extracted.map((candidate) => ({
-          ...candidate,
-          selected: true,
-          connectToSuggested: false,
-        })),
-      );
-    } catch (reason) {
-      if (!controller.signal.aborted) {
-        setAIError(
-          reason instanceof Error ? reason.message : "AI 拆解失败，请重试。",
-        );
-      }
-    } finally {
-      if (aiControllerRef.current === controller) {
-        aiControllerRef.current = null;
-        setAILoading(false);
-      }
-    }
-  };
-
   const aiAssistantProps = {
     review: aiReview,
     syncBlocks,
@@ -1384,14 +1342,10 @@ function InterviewDetail({
     configured: aiConfigured,
     loading: aiLoading,
     progress: aiProgress,
-    onCancel: () => {
-      aiControllerRef.current?.abort();
-      aiControllerRef.current = null;
-      setAILoading(false);
-      setAIProgress(null);
-    },
+    queued: interview.extractionTask?.status === "queued",
+    onCancel: () => onCancelExtraction(interview.id),
     error: aiError,
-    onStart: () => void startAIReview(),
+    onStart: () => { if (aiConfigured) onStartExtraction(interview); },
     onOpenSettings: onOpenAISettings,
     onUpdate: (candidateId: string, input: UpdateAIReviewCandidateInput) =>
       onUpdateAIReviewCandidate(interview.id, candidateId, input),
@@ -1555,7 +1509,7 @@ function InterviewDetail({
             {interview.company}
             {interview.round ? ` · ${interview.round}` : ""}
           </span>
-          <StatusBadge status={interview.status} />
+          <StatusBadge status={interview.status} task={interview.extractionTask} />
         </div>
 
         <header className="interview-detail-hero">
@@ -2632,6 +2586,8 @@ export default function App() {
     updateInterview,
     createQuestion,
     saveAIReview,
+    saveExtractionTask,
+    markExtractionRead,
     completeAIReview,
     updateAIReviewCandidate,
     resolveAIReviewCandidate,
@@ -2650,10 +2606,14 @@ export default function App() {
   } = useWorkspace();
   const aiSettings = useAISettings();
   const aiClient = useMemo(() => createOpenAICompatibleClient(), []);
+  const extraction = useExtractionQueue(
+    aiClient, aiSettings.config, aiSettings.apiKey, workspace.syncBlocks, saveExtractionTask,
+  );
   const [view, setView] = useState<View>("overview");
   const [selectedInterviewId, setSelectedInterviewId] = useState<string | null>(
     null,
   );
+  const [reviewRequest, setReviewRequest] = useState<{ interviewId: string; nonce: number } | null>(null);
   const [selectedSyncId, setSelectedSyncId] = useState<string | null>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(
     null,
@@ -2796,6 +2756,7 @@ export default function App() {
 
   const clearData = () => {
     if (!window.confirm("确定清空全部本地数据吗？此操作无法撤销。")) return;
+    extraction.reset();
     clear();
     navigate("overview");
     notify("本地工作区已清空");
@@ -2969,6 +2930,10 @@ export default function App() {
             onUpdateAIReviewCandidate={updateAIReviewCandidate}
             onResolveAIReviewCandidate={resolveAIReviewCandidate}
             onAcceptAllAIReviewCandidates={acceptAllAIReviewCandidates}
+            onStartExtraction={extraction.start}
+            onCancelExtraction={extraction.cancel}
+            aiConfigured={aiSettings.configured}
+            onOpenAISettings={() => navigate("settings")}
           />
         ) : null}
 
@@ -3004,15 +2969,15 @@ export default function App() {
           <InterviewDetail
             key={selectedInterview.id}
             interview={selectedInterview}
+            reviewRequest={reviewRequest?.interviewId === selectedInterview.id ? reviewRequest.nonce : 0}
             questions={workspace.questions}
             syncBlocks={workspace.syncBlocks}
             resumeExperiences={workspace.resumeExperiences}
             aiReview={workspace.aiReviews.find(
               (review) => review.interviewId === selectedInterview.id,
             )}
-            aiClient={aiClient}
-            aiConfig={aiSettings.config}
-            aiApiKey={aiSettings.apiKey}
+            onStartExtraction={extraction.start}
+            onCancelExtraction={extraction.cancel}
             aiConfigured={aiSettings.configured}
             onBack={() => setSelectedInterviewId(null)}
             onAddQuestion={() =>
@@ -3023,7 +2988,6 @@ export default function App() {
             onCreateSync={(questionId) =>
               setDialog({ kind: "sync", questionId })
             }
-            onSaveAIReview={saveAIReview}
             onUpdateAIReviewCandidate={updateAIReviewCandidate}
             onResolveAIReviewCandidate={resolveAIReviewCandidate}
             onAcceptAllAIReviewCandidates={acceptAllAIReviewCandidates}
@@ -3134,11 +3098,13 @@ export default function App() {
               ) {
                 return;
               }
+              extraction.reset();
               loadDemo();
               navigate("overview");
               notify("示例工作区已加载");
             }}
             onRestore={async (nextWorkspace) => {
+              extraction.reset();
               await restoreWorkspace(nextWorkspace);
               navigate("overview");
               notify("备份已导入并替换当前工作区");
@@ -3251,10 +3217,12 @@ export default function App() {
 
       {dialog?.kind === "interview" ? (
         <InterviewImportDialog
-          client={aiClient}
           config={aiSettings.config}
           configured={aiSettings.configured}
-          apiKey={aiSettings.apiKey}
+          interviews={workspace.interviews}
+          reviews={workspace.aiReviews}
+          onStartExtraction={extraction.start}
+          onCancelExtraction={extraction.cancel}
           syncBlocks={workspace.syncBlocks}
           onCreateDraft={createInterview}
           onUpdateDraft={updateInterview}
@@ -3262,8 +3230,7 @@ export default function App() {
           onClose={(savedDraftId) => {
             setDialog(null);
             if (savedDraftId) {
-              openInterview(savedDraftId);
-              notify("面试已加入待审核");
+              notify("面经已保存，可在概览或面试记录查看处理状态");
             }
           }}
           onOpenSettings={(savedDraftId) => {
@@ -3273,6 +3240,7 @@ export default function App() {
           }}
           onComplete={(interviewId, candidates) => {
             completeAIReview(interviewId, candidates);
+            markExtractionRead(interviewId);
             setDialog(null);
             openInterview(interviewId);
             notify(
@@ -3353,6 +3321,26 @@ export default function App() {
         </Modal>
       ) : null}
 
+      <div className="extraction-notifications" aria-live="polite" aria-label="AI 处理通知">
+        {workspace.interviews.filter((item) => item.extractionTask?.unread).map((interview) => (
+          <div className="extraction-notification" key={interview.extractionTask!.id}>
+            <div>
+              <strong>{interview.extractionTask!.status === "completed" ? "AI 解析已完成" : "AI 解析未完成"}</strong>
+              <p>{interview.company}</p>
+              <button className="text-button" onClick={() => {
+                setDialog(null);
+                markExtractionRead(interview.id);
+                setReviewRequest({ interviewId: interview.id, nonce: Date.now() });
+                openInterview(interview.id);
+              }}>{interview.extractionTask!.status === "completed" ? "查看并审核" : "查看并重试"}</button>
+            </div>
+            <button className="icon-button" aria-label={`关闭 ${interview.company} 的处理通知`} onClick={() => markExtractionRead(interview.id)}>
+              <X size={16} aria-hidden="true" />
+            </button>
+          </div>
+        ))}
+      </div>
+
       {toast ? (
         <div className="toast" role="status">
           <CheckCircle2 size={15} aria-hidden="true" />
@@ -3364,6 +3352,7 @@ export default function App() {
         <button
           className="demo-shortcut"
           onClick={() => {
+            extraction.reset();
             loadDemo();
             notify("已加载明确标记的示例内容");
           }}
