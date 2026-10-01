@@ -22,6 +22,7 @@ import { createPortal } from "react-dom";
 import type {
   AIClient,
   AIExtractionCandidate,
+  AIExtractionProgress,
   AIProviderCredentialId,
   AIProviderConfig,
   AIProviderPresetId,
@@ -36,6 +37,14 @@ import type {
   SaveAIReviewCandidateInput,
   SyncBlock,
 } from "../domain/types";
+
+export function extractionProgressLabel(progress: AIExtractionProgress | null) {
+  if (!progress) return "正在准备拆解…";
+  const completed = `已完成 ${progress.completed}/${progress.total} 段`;
+  if (progress.phase === "splitting") return `${completed}，正在缩小未完成段落…`;
+  if (progress.phase === "retrying") return `${completed}，正在重新提取当前段…`;
+  return `${completed}，正在拆解面经…`;
+}
 
 interface AISettingsPanelProps {
   config: AIProviderConfig;
@@ -514,18 +523,14 @@ export function InterviewImportDialog({
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [raw, setRaw] = useState("");
   const [progress, setProgress] = useState(0);
+  const [extractionProgress, setExtractionProgress] = useState<AIExtractionProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draftInterviewId, setDraftInterviewId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ReviewCandidate[]>([]);
   const controllerRef = useRef<AbortController | null>(null);
-  const progressTimerRef = useRef<number | null>(null);
   const resultTimerRef = useRef<number | null>(null);
 
   const clearTimers = () => {
-    if (progressTimerRef.current !== null) {
-      window.clearInterval(progressTimerRef.current);
-      progressTimerRef.current = null;
-    }
     if (resultTimerRef.current !== null) {
       window.clearTimeout(resultTimerRef.current);
       resultTimerRef.current = null;
@@ -564,7 +569,7 @@ export function InterviewImportDialog({
     }));
 
   const startExtraction = async () => {
-    if (!raw.trim()) return;
+    if (!raw.trim() || controllerRef.current) return;
     if (!configured) {
       setError("尚未配置 AI 服务。可以先保存原文，或前往设置完成配置。");
       return;
@@ -574,12 +579,10 @@ export function InterviewImportDialog({
     const controller = new AbortController();
     controllerRef.current = controller;
     setError(null);
-    setProgress(8);
+    setProgress(0);
+    setExtractionProgress(null);
     setStep(2);
     clearTimers();
-    progressTimerRef.current = window.setInterval(() => {
-      setProgress((current) => Math.min(88, current + 4 + Math.random() * 8));
-    }, 360);
 
     try {
       const extracted = await client.extractInterview(
@@ -587,7 +590,13 @@ export function InterviewImportDialog({
         apiKey,
         { interview, syncBlocks },
         controller.signal,
+        (update) => {
+          if (controller.signal.aborted || controllerRef.current !== controller) return;
+          setExtractionProgress(update);
+          setProgress(Math.min(99, Math.floor(update.completed / update.total * 100)));
+        },
       );
+      if (controller.signal.aborted || controllerRef.current !== controller) return;
       clearTimers();
       setProgress(100);
       const reviewCandidates = extracted.map((candidate) => ({
@@ -600,11 +609,11 @@ export function InterviewImportDialog({
       onSaveReview(interview.id, serializeCandidates(reviewCandidates));
       resultTimerRef.current = window.setTimeout(() => setStep(3), 320);
     } catch (reason) {
-      clearTimers();
       if (controller.signal.aborted) return;
+      clearTimers();
       setError(reason instanceof Error ? reason.message : "AI 拆解失败。");
     } finally {
-      controllerRef.current = null;
+      if (controllerRef.current === controller) controllerRef.current = null;
     }
   };
 
@@ -652,13 +661,7 @@ export function InterviewImportDialog({
   const currentStage =
     progress >= 100
       ? "完成 · 原文已保存在本地"
-      : progress >= 72
-        ? "生成审核清单…"
-        : progress >= 46
-          ? "匹配已有同步块…"
-          : progress >= 22
-            ? "拆分候选问答块…"
-            : "识别面经结构…";
+      : extractionProgressLabel(extractionProgress);
 
   const close = () => {
     clearTimers();
@@ -756,7 +759,7 @@ export function InterviewImportDialog({
                 <span>
                   点击 AI 提取时，原文先保存到本地，再直接发送到你配置的
                   <code>{configured ? config.endpoint : " AI 服务"}</code>
-                  ；不会经过千面服务器。
+                  ；不会经过千面服务器。长面经会自动分段处理，超时或结果不完整时会缩小未完成段落，格式异常时会重试一次。
                 </span>
               </div>
               {error ? (
@@ -781,40 +784,20 @@ export function InterviewImportDialog({
                 <span />
                 <Sparkles size={23} />
               </div>
-              <h3>{error ? "拆解没有完成" : currentStage}</h3>
+              <h3 aria-live="polite">{error ? "拆解没有完成" : currentStage}</h3>
               <p>
                 {error
                   ? error
                   : "正在识别候选问题、实例回答，并匹配已有同步块。"}
               </p>
+              {error ? <p>原文草稿已保存在本地，可以稍后从面试记录重新拆解。</p> : null}
               {!error ? (
                 <>
                   <div className="import-progress">
                     <span style={{ width: `${Math.round(progress)}%` }} />
                     <strong>{Math.round(progress)}%</strong>
                   </div>
-                  <div className="import-checklist">
-                    {[
-                      ["切分段落", 8],
-                      ["抽取问题", 32],
-                      ["匹配同步块", 62],
-                      ["生成结果", 100],
-                    ].map(([label, threshold]) => (
-                      <span
-                        className={
-                          progress >= Number(threshold) ? "complete" : ""
-                        }
-                        key={label}
-                      >
-                        <i>
-                          {progress >= Number(threshold) ? (
-                            <Check size={11} />
-                          ) : null}
-                        </i>
-                        {label}
-                      </span>
-                    ))}
-                  </div>
+                  <p>按已完成段落显示进度，全部完成后进入审核清单。</p>
                 </>
               ) : (
                 <button

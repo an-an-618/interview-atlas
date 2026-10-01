@@ -42,3 +42,5 @@ Thumbs.db
 .artifacts/
 .chrome-*/
 .tooling/
+.dbg/
+debug-long-interview-failure.md
