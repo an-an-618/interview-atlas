@@ -31,10 +31,11 @@ import { createPortal } from "react-dom";
 import { createOpenAICompatibleClient } from "./ai/openAICompatibleClient";
 import type {
   AIClient,
+  AIExtractionProgress,
   AIProviderConfig,
   AIProviderCredentialId,
 } from "./ai/types";
-import { AISettingsPanel, InterviewImportDialog } from "./components/AI";
+import { AISettingsPanel, InterviewImportDialog, extractionProgressLabel } from "./components/AI";
 import { QuestionForm, SyncBlockForm } from "./components/Forms";
 import { Modal } from "./components/Modal";
 import { MockInterviewPage } from "./components/MockInterview";
@@ -1091,7 +1092,9 @@ function InterviewAIAssistant({
   reviewRequired,
   configured,
   loading,
+  progress,
   error,
+  onCancel,
   onStart,
   onOpenSettings,
   onUpdate,
@@ -1103,7 +1106,9 @@ function InterviewAIAssistant({
   reviewRequired: boolean;
   configured: boolean;
   loading: boolean;
+  progress?: AIExtractionProgress | null;
   error: string | null;
+  onCancel?: () => void;
   onStart: () => void;
   onOpenSettings: () => void;
   onUpdate: (candidateId: string, input: UpdateAIReviewCandidateInput) => void;
@@ -1135,7 +1140,8 @@ function InterviewAIAssistant({
         <div className="interview-ai-empty">
           <LoaderCircle className="spin" size={21} aria-hidden="true" />
           <strong>正在拆解面经</strong>
-          <p>识别候选问题、当次回答与同步块建议。</p>
+          <p aria-live="polite">{extractionProgressLabel(progress ?? null)}</p>
+          {onCancel ? <button className="text-button" type="button" onClick={onCancel}>取消拆解</button> : null}
         </div>
       ) : !review && reviewRequired ? (
         <div className="interview-ai-empty">
@@ -1273,6 +1279,7 @@ function InterviewDetail({
 }) {
   const [sourceExpanded, setSourceExpanded] = useState(false);
   const [aiLoading, setAILoading] = useState(false);
+  const [aiProgress, setAIProgress] = useState<AIExtractionProgress | null>(null);
   const [aiError, setAIError] = useState<string | null>(null);
   const [mobileAIOpen, setMobileAIOpen] = useState(false);
   const aiControllerRef = useRef<AbortController | null>(null);
@@ -1332,6 +1339,7 @@ function InterviewDetail({
     const controller = new AbortController();
     aiControllerRef.current = controller;
     setAILoading(true);
+    setAIProgress(null);
     setAIError(null);
     try {
       const extracted = await aiClient.extractInterview(
@@ -1339,7 +1347,13 @@ function InterviewDetail({
         aiApiKey,
         { interview, syncBlocks },
         controller.signal,
+        (progress) => {
+          if (!controller.signal.aborted && aiControllerRef.current === controller) {
+            setAIProgress(progress);
+          }
+        },
       );
+      if (controller.signal.aborted || aiControllerRef.current !== controller) return;
       onSaveAIReview(
         interview.id,
         extracted.map((candidate) => ({
@@ -1369,6 +1383,13 @@ function InterviewDetail({
       interview.status === "draft" || interview.status === "pending",
     configured: aiConfigured,
     loading: aiLoading,
+    progress: aiProgress,
+    onCancel: () => {
+      aiControllerRef.current?.abort();
+      aiControllerRef.current = null;
+      setAILoading(false);
+      setAIProgress(null);
+    },
     error: aiError,
     onStart: () => void startAIReview(),
     onOpenSettings: onOpenAISettings,

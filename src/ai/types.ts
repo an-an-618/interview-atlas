@@ -50,6 +50,12 @@ export interface AIExtractionInput {
   syncBlocks: SyncBlock[];
 }
 
+export interface AIExtractionProgress {
+  completed: number;
+  total: number;
+  phase: "extracting" | "retrying" | "splitting";
+}
+
 export interface AIMockInterviewTurnInput {
   session: MockInterviewSession;
   workspace: Workspace;
@@ -77,6 +83,7 @@ export interface AIClient {
     apiKey: string,
     input: AIExtractionInput,
     signal?: AbortSignal,
+    onProgress?: (progress: AIExtractionProgress) => void,
   ): Promise<AIExtractionCandidate[]>;
   continueMockInterview(
     config: AIProviderConfig,

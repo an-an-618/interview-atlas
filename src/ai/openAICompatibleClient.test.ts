@@ -299,6 +299,127 @@ describe("OpenAI-compatible client", () => {
     );
   });
 
+  it("covers long source exactly once and supplies bounded adjacent context", async () => {
+    const rawText = "面试官：如何优化？\n候选人：先测量再定位。\n".repeat(600);
+    const inputs: Array<{ interview: { rawText: string }; adjacentContext: { before: string; after: string } }> = [];
+    const progress = vi.fn();
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      inputs.push(JSON.parse(JSON.parse(String(init?.body)).messages[1].content));
+      return completion('{"questions":[]}');
+    });
+    await createOpenAICompatibleClient(fetchMock).extractInterview(
+      config, "", { interview: { ...interview, rawText }, syncBlocks: [] }, undefined, progress,
+    );
+    expect(inputs.length).toBeGreaterThan(1);
+    expect(inputs.map((item) => item.interview.rawText).join("")).toBe(rawText);
+    let offset = 0;
+    for (const item of inputs) {
+      expect(item.interview.rawText.length).toBeLessThanOrEqual(3_000);
+      expect(item.adjacentContext.before).toBe(rawText.slice(Math.max(0, offset - 500), offset));
+      offset += item.interview.rawText.length;
+      expect(item.adjacentContext.after).toBe(rawText.slice(offset, offset + 500));
+    }
+    expect(progress).toHaveBeenLastCalledWith({
+      completed: inputs.length, total: inputs.length, phase: "extracting",
+    });
+  });
+
+  it("subdivides a truncated segment without regenerating successful segments", async () => {
+    const sources: string[] = [];
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const source: string = JSON.parse(JSON.parse(String(init?.body)).messages[1].content).interview.rawText;
+      sources.push(source);
+      return source.includes("乙") && source.length > 1_500
+        ? completion('{"questions":[', "length")
+        : completion(JSON.stringify({ questions: [{ title: `题${sources.length}` }] }));
+    });
+    const rawText = "甲".repeat(3_000) + "乙".repeat(3_000);
+    const result = await createOpenAICompatibleClient(fetchMock).extractInterview(
+      config, "", { interview: { ...interview, rawText }, syncBlocks: [] },
+    );
+    expect(sources.map((value) => value.length)).toEqual([3_000, 3_000, 1_500, 1_500]);
+    expect(result.map((item) => item.title)).toEqual(["题1", "题3", "题4"]);
+  });
+
+  it("retains more than 40 total candidates and distinct answers to identical titles", async () => {
+    let segment = 0;
+    const fetchMock = vi.fn(async () => {
+      segment += 1;
+      return completion(JSON.stringify({
+        questions: Array.from({ length: 25 }, (_, index) => ({
+          title: `问题${index}`, answer: `第${segment}段回答`,
+        })),
+      }));
+    });
+    const result = await createOpenAICompatibleClient(fetchMock).extractInterview(
+      config, "", { interview: { ...interview, rawText: "甲".repeat(6_000) }, syncBlocks: [] },
+    );
+    expect(result).toHaveLength(50);
+    expect(result[0]?.answer).toBe("第1段回答");
+    expect(result[25]?.answer).toBe("第2段回答");
+  });
+
+  it("deduplicates only identical extracted candidates across segments", async () => {
+    const fetchMock = vi.fn(async () => completion('{"questions":[{"title":"重复题","answer":"相同回答"}]}'));
+    const result = await createOpenAICompatibleClient(fetchMock).extractInterview(
+      config, "", { interview: { ...interview, rawText: "甲".repeat(6_000) }, syncBlocks: [] },
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  it("does not present successful earlier segments as a complete result after a failure", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(completion('{"questions":[{"title":"第一段"}]}'))
+      .mockResolvedValueOnce(new Response("", { status: 401 }));
+    await expect(createOpenAICompatibleClient(fetchMock).extractInterview(
+      config, "", { interview: { ...interview, rawText: "甲".repeat(6_000) }, syncBlocks: [] },
+    )).rejects.toThrow("第 2/2 段未完成");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels before sending any subsequent segment", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async () => completion('{"questions":[]}'));
+    await expect(createOpenAICompatibleClient(fetchMock).extractInterview(
+      config, "", { interview: { ...interview, rawText: "甲".repeat(6_000) }, syncBlocks: [] },
+      controller.signal,
+      (progress) => { if (progress.completed === 1) controller.abort(); },
+    )).rejects.toThrow("已取消");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("subdivides a timed-out segment and finishes with smaller requests", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn()
+        .mockImplementationOnce((_url: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+          }))
+        .mockImplementation(async () => completion('{"questions":[]}'));
+      const result = createOpenAICompatibleClient(fetchMock).extractInterview(
+        config, "", { interview: { ...interview, rawText: "甲".repeat(2_400) }, syncBlocks: [] },
+      );
+      const assertion = expect(result).resolves.toEqual([]);
+      await vi.advanceTimersByTimeAsync(90_000);
+      await assertion;
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      const lengths = fetchMock.mock.calls.map((call) =>
+        JSON.parse(JSON.parse(String(call[1]?.body)).messages[1].content).interview.rawText.length);
+      expect(lengths).toEqual([2_400, 1_200, 1_200]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("bounds repeated truncation instead of subdividing forever", async () => {
+    const fetchMock = vi.fn(async () => completion(null, "length"));
+    await expect(createOpenAICompatibleClient(fetchMock).extractInterview(
+      config, "", { interview: { ...interview, rawText: "甲".repeat(3_000) }, syncBlocks: [] },
+    )).rejects.toThrow("未完成");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it("parses interviewer end decisions and tolerates plain-text providers", () => {
     expect(
       parseMockInterviewTurnResponse(
