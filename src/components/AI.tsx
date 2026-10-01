@@ -40,11 +40,9 @@ import type {
 import { extractionLabel } from "../ai/extractionQueue";
 
 export function extractionProgressLabel(progress: AIExtractionProgress | null) {
-  if (!progress) return "正在准备拆解…";
-  const completed = `已完成 ${progress.completed}/${progress.total} 段`;
-  if (progress.phase === "splitting") return `${completed}，正在缩小未完成段落…`;
-  if (progress.phase === "retrying") return `${completed}，正在重新提取当前段…`;
-  return `${completed}，正在拆解面经…`;
+  if (!progress) return "正在准备解析…";
+  if (progress.phase === "retrying") return "正在重新尝试解析…";
+  return "正在解析面经…";
 }
 
 interface AISettingsPanelProps {
@@ -729,7 +727,7 @@ export function InterviewImportDialog({
                 <span>
                   点击 AI 提取时，原文先保存到本地，再直接发送到你配置的
                   <code>{configured ? config.endpoint : " AI 服务"}</code>
-                  ；不会经过千面服务器。长面经会自动分段处理，超时或结果不完整时会缩小未完成段落，格式异常时会重试一次。
+                  ；不会经过千面服务器。较长的面经可能需要更多时间，遇到解析异常时会自动尝试恢复。
                 </span>
               </div>
               {error ? (

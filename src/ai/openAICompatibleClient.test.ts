@@ -373,7 +373,7 @@ describe("OpenAI-compatible client", () => {
       .mockResolvedValueOnce(new Response("", { status: 401 }));
     await expect(createOpenAICompatibleClient(fetchMock).extractInterview(
       config, "", { interview: { ...interview, rawText: "甲".repeat(6_000) }, syncBlocks: [] },
-    )).rejects.toThrow("第 2/2 段未完成");
+    )).rejects.toThrow("本次解析未完成");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
