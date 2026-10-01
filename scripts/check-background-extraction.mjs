@@ -8,7 +8,22 @@ const page = await context.newPage();
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
 const pending = [];
-await context.route("https://ai-check.invalid/**", (route) => pending.push(route));
+async function respond(route, payload) {
+  await route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(payload) } }] }),
+  });
+}
+await context.route("https://ai-check.invalid/**", async (route) => {
+  const data = JSON.parse(route.request().postDataJSON().messages[1].content);
+  if (data.stage === "inventory") { pending.push(route); return; }
+  if (data.stage === "coverage") { await respond(route, { questions: [], hasMore: false }); return; }
+  if (data.stage === "answers") {
+    await respond(route, { questions: data.targets.map(({ id }) => ({ id, answer: "先测量关键指标。", tags: ["性能"] })) });
+    return;
+  }
+  await respond(route, { matches: data.questions.map(({ id }) => ({ id, suggestedSyncBlockId: null, matchReason: "" })) });
+});
 const base = process.env.APP_URL ?? "http://127.0.0.1:43225";
 const wait = (fn) => page.waitForFunction(fn);
 async function nav(name) {
@@ -22,12 +37,11 @@ async function start(company) {
 }
 async function reply(index) {
   assert.ok(pending[index], `request ${index} exists`);
-  await pending[index].fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({
-      questions: [{ title: "如何优化性能？", answer: "先测量关键指标。", tags: ["性能"],
-        sourceExcerpt: "如何优化性能？", suggestedSyncBlockId: null, matchReason: "" }],
-    }) } }] }),
+  const data = JSON.parse(pending[index].request().postDataJSON().messages[1].content);
+  const sourceId = data.source.find((part) => part.text.includes("如何优化性能？")).id;
+  await respond(pending[index], {
+    questions: [{ title: "如何优化性能？", sourceId, quote: "如何优化性能？", occurrence: 1 }],
+    hasMore: false,
   });
 }
 async function stored() {
