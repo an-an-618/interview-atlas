@@ -1,3 +1,33 @@
+.extraction-notifications {
+  position: fixed;
+  right: 16px;
+  bottom: 76px;
+  z-index: 150;
+  display: grid;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.extraction-notification {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  background: #f8f4eb;
+  color: #26271f;
+  border: 1px solid #ded8c8;
+  border-left: 3px solid #bb6947;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px #2925191a;
+}
+
+.extraction-notification p {
+  margin: 7px 0 12px;
+  overflow-wrap: anywhere;
+}
+
 :root {
   color: #1c1b18;
   background: #f5f1e8;

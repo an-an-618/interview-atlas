@@ -20,7 +20,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type {
-  AIClient,
   AIExtractionCandidate,
   AIExtractionProgress,
   AIProviderCredentialId,
@@ -34,9 +33,11 @@ import {
 import type {
   CreateInterviewInput,
   Interview,
+  InterviewAIReview,
   SaveAIReviewCandidateInput,
   SyncBlock,
 } from "../domain/types";
+import { extractionLabel } from "../ai/extractionQueue";
 
 export function extractionProgressLabel(progress: AIExtractionProgress | null) {
   if (!progress) return "正在准备拆解…";
@@ -444,10 +445,12 @@ export interface ReviewCandidate extends AIExtractionCandidate {
 }
 
 interface InterviewImportDialogProps {
-  client: AIClient;
   config: AIProviderConfig;
   configured: boolean;
-  apiKey: string;
+  interviews: Interview[];
+  reviews: InterviewAIReview[];
+  onStartExtraction: (interview: Interview) => string;
+  onCancelExtraction: (interviewId: string) => void;
   syncBlocks: SyncBlock[];
   onCreateDraft: (input: CreateInterviewInput) => Interview;
   onUpdateDraft: (
@@ -508,10 +511,12 @@ export function inferInterviewInput(rawText: string): CreateInterviewInput {
 }
 
 export function InterviewImportDialog({
-  client,
   config,
   configured,
-  apiKey,
+  interviews,
+  reviews,
+  onStartExtraction,
+  onCancelExtraction,
   syncBlocks,
   onCreateDraft,
   onUpdateDraft,
@@ -522,28 +527,26 @@ export function InterviewImportDialog({
 }: InterviewImportDialogProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [raw, setRaw] = useState("");
-  const [progress, setProgress] = useState(0);
-  const [extractionProgress, setExtractionProgress] = useState<AIExtractionProgress | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setError] = useState<string | null>(null);
   const [draftInterviewId, setDraftInterviewId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ReviewCandidate[]>([]);
-  const controllerRef = useRef<AbortController | null>(null);
-  const resultTimerRef = useRef<number | null>(null);
-
-  const clearTimers = () => {
-    if (resultTimerRef.current !== null) {
-      window.clearTimeout(resultTimerRef.current);
-      resultTimerRef.current = null;
-    }
-  };
-
-  useEffect(
-    () => () => {
-      clearTimers();
-      controllerRef.current?.abort();
-    },
-    [],
-  );
+  const task = interviews.find((item) => item.id === draftInterviewId)?.extractionTask;
+  const extractionProgress = task?.progress ?? null;
+  const progress = task?.status === "completed" ? 100
+    : extractionProgress ? Math.floor(extractionProgress.completed / extractionProgress.total * 100) : 0;
+  const error = localError ?? (step === 2 ? task?.error : null);
+  const loadedTask = useRef<string | null>(null);
+  useEffect(() => {
+    if (task?.status !== "completed" || loadedTask.current === task.id) return;
+    const review = reviews.find((item) => item.interviewId === draftInterviewId);
+    if (!review) return;
+    loadedTask.current = task.id;
+    setCandidates(review.candidates.map((candidate) => ({
+      ...candidate, selected: candidate.decision === "pending",
+      tagsText: candidate.tags.join("，"),
+    })));
+    setStep(3);
+  }, [task, reviews, draftInterviewId]);
 
   const saveDraft = () => {
     const input = inferInterviewInput(raw);
@@ -568,53 +571,17 @@ export function InterviewImportDialog({
       connectToSuggested: candidate.connectToSuggested,
     }));
 
-  const startExtraction = async () => {
-    if (!raw.trim() || controllerRef.current) return;
+  const startExtraction = () => {
+    if (!raw.trim()) return;
     if (!configured) {
       setError("尚未配置 AI 服务。可以先保存原文，或前往设置完成配置。");
       return;
     }
 
     const interview = saveDraft();
-    const controller = new AbortController();
-    controllerRef.current = controller;
     setError(null);
-    setProgress(0);
-    setExtractionProgress(null);
     setStep(2);
-    clearTimers();
-
-    try {
-      const extracted = await client.extractInterview(
-        config,
-        apiKey,
-        { interview, syncBlocks },
-        controller.signal,
-        (update) => {
-          if (controller.signal.aborted || controllerRef.current !== controller) return;
-          setExtractionProgress(update);
-          setProgress(Math.min(99, Math.floor(update.completed / update.total * 100)));
-        },
-      );
-      if (controller.signal.aborted || controllerRef.current !== controller) return;
-      clearTimers();
-      setProgress(100);
-      const reviewCandidates = extracted.map((candidate) => ({
-        ...candidate,
-        selected: true,
-        tagsText: candidate.tags.join("，"),
-        connectToSuggested: false,
-      }));
-      setCandidates(reviewCandidates);
-      onSaveReview(interview.id, serializeCandidates(reviewCandidates));
-      resultTimerRef.current = window.setTimeout(() => setStep(3), 320);
-    } catch (reason) {
-      if (controller.signal.aborted) return;
-      clearTimers();
-      setError(reason instanceof Error ? reason.message : "AI 拆解失败。");
-    } finally {
-      if (controllerRef.current === controller) controllerRef.current = null;
-    }
+    onStartExtraction(interview);
   };
 
   useEffect(() => {
@@ -633,11 +600,8 @@ export function InterviewImportDialog({
   });
 
   const cancelExtraction = () => {
-    clearTimers();
-    controllerRef.current?.abort();
-    controllerRef.current = null;
+    if (draftInterviewId) onCancelExtraction(draftInterviewId);
     setError(null);
-    setProgress(0);
     setStep(1);
   };
 
@@ -661,16 +625,22 @@ export function InterviewImportDialog({
   const currentStage =
     progress >= 100
       ? "完成 · 原文已保存在本地"
-      : extractionProgressLabel(extractionProgress);
+      : task?.status === "queued" ? extractionLabel(task) : extractionProgressLabel(extractionProgress);
 
   const close = () => {
-    clearTimers();
-    controllerRef.current?.abort();
     if (step === 3 && draftInterviewId) {
       onSaveReview(draftInterviewId, serializeCandidates(candidates));
     }
     onClose(draftInterviewId ?? undefined);
   };
+
+  useEffect(() => {
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  });
 
   const saveRawOnly = () => {
     if (!raw.trim()) return;
@@ -797,7 +767,8 @@ export function InterviewImportDialog({
                     <span style={{ width: `${Math.round(progress)}%` }} />
                     <strong>{Math.round(progress)}%</strong>
                   </div>
-                  <p>按已完成段落显示进度，全部完成后进入审核清单。</p>
+                  <p>关闭弹窗后会继续处理，完成时会通知你。可从概览或面试记录查看进度。</p>
+                  <button className="button secondary" type="button" onClick={close}>在后台继续</button>
                 </>
               ) : (
                 <button
@@ -978,7 +949,7 @@ export function InterviewImportDialog({
                 onClick={cancelExtraction}
               >
                 <ArrowLeft size={14} aria-hidden="true" />
-                返回修改
+                取消拆解并修改
               </button>
               <span>原文草稿已保存在本地</span>
             </>
