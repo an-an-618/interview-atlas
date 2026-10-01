@@ -4,7 +4,12 @@ export interface ExtractionTask {
   id: string;
   status: "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
   updatedAt: string;
-  progress?: { completed: number; total: number; phase: "extracting" | "retrying" | "splitting" };
+  progress?: {
+    completed: number;
+    total: number;
+    phase: "extracting" | "retrying" | "splitting";
+    stage?: "inventory" | "coverage" | "answers" | "matching";
+  };
   error?: string;
   unread?: boolean;
 }

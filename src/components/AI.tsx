@@ -42,6 +42,10 @@ import { extractionLabel } from "../ai/extractionQueue";
 export function extractionProgressLabel(progress: AIExtractionProgress | null) {
   if (!progress) return "正在准备解析…";
   if (progress.phase === "retrying") return "正在重新尝试解析…";
+  if (progress.stage === "inventory") return "正在通读全文，识别面试问题…";
+  if (progress.stage === "coverage") return "正在复查全文中的遗漏问题…";
+  if (progress.stage === "answers") return "正在整理每个问题的当次回答…";
+  if (progress.stage === "matching") return "正在查找可关联的同步块…";
   return "正在解析面经…";
 }
 

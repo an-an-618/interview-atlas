@@ -54,6 +54,7 @@ export interface AIExtractionProgress {
   completed: number;
   total: number;
   phase: "extracting" | "retrying" | "splitting";
+  stage?: "inventory" | "coverage" | "answers" | "matching";
 }
 
 export interface AIMockInterviewTurnInput {
