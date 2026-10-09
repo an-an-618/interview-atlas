@@ -33,4 +33,5 @@ tokio-util = { version = "0.7", features = ["io"] }
 url = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-screencapturekit = { version = "=10.0.0", features = ["macos_15_0"] }
+apple-metal = { version = "=0.6.0", default-features = false }
+screencapturekit = { version = "=8.0.0", features = ["macos_15_0"] }

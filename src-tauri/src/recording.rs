@@ -574,9 +574,10 @@ mod platform {
             .with_excludes_current_process_audio(true)
             .with_captures_microphone(true);
         if let Some(device) = AudioInputDevice::default_device() {
-            config
-                .try_set_microphone_capture_device_id(&device.id)
-                .map_err(|error| format!("无法选择麦克风 {}：{error}", device.name))?;
+            if device.id.contains('\0') {
+                return Err(format!("无法选择麦克风 {}：设备 ID 无效。", device.name));
+            }
+            config.set_microphone_capture_device_id(&device.id);
         }
 
         let mut stream = SCStream::new(&filter, &config);
