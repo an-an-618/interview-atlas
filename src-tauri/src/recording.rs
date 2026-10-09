@@ -399,7 +399,7 @@ mod platform {
             let is_float = description.audio_is_float();
             let list = sample
                 .audio_buffer_list()
-                .map_err(|status| format!("无法读取录音缓冲区：{status}"))?;
+                .ok_or_else(|| "无法读取录音缓冲区。".to_string())?;
 
             if self.writer.is_none() {
                 let spec = WavSpec {
@@ -564,8 +564,7 @@ mod platform {
         let filter = SCContentFilter::create()
             .with_display(&display)
             .with_excluding_windows(&[])
-            .build()
-            .map_err(|error| format!("无法创建系统音频采集范围：{error}"))?;
+            .build();
         let mut config = SCStreamConfiguration::new()
             .with_width(2)
             .with_height(2)
@@ -573,16 +572,14 @@ mod platform {
             .with_sample_rate(TARGET_SAMPLE_RATE as i32)
             .with_channel_count(1)
             .with_excludes_current_process_audio(true)
-            .with_captures_microphone(true)
-            .map_err(|_| "双端录音需要 macOS 15 或更高版本。".to_string())?;
+            .with_captures_microphone(true);
         if let Some(device) = AudioInputDevice::default_device() {
             config
-                .set_microphone_capture_device_id(&device.id)
+                .try_set_microphone_capture_device_id(&device.id)
                 .map_err(|error| format!("无法选择麦克风 {}：{error}", device.name))?;
         }
 
-        let mut stream = SCStream::new(&filter, &config)
-            .map_err(|error| format!("无法创建双端录音会话：{error}"))?;
+        let mut stream = SCStream::new(&filter, &config);
         stream
             .add_output_handler(
                 Handler {
@@ -590,7 +587,7 @@ mod platform {
                 },
                 SCStreamOutputType::Audio,
             )
-            .map_err(|error| format!("无法接收系统音频：{error}"))?;
+            .ok_or_else(|| "无法接收系统音频。".to_string())?;
         stream
             .add_output_handler(
                 Handler {
@@ -598,7 +595,7 @@ mod platform {
                 },
                 SCStreamOutputType::Microphone,
             )
-            .map_err(|error| format!("无法接收麦克风音频：{error}"))?;
+            .ok_or_else(|| "无法接收麦克风音频。".to_string())?;
         stream.start_capture().map_err(|error| {
             format!("无法开始录音：{error}。请允许麦克风和屏幕与系统音频录制权限后重试。")
         })?;
