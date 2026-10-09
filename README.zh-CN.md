@@ -1,4 +1,4 @@
-# Interview Atlas（千面）
+# Interview Atlas（见字·如面）
 
 > 把散落的面经整理成可回溯、可复用、可持续修订的个人面试知识库。
 
@@ -10,11 +10,11 @@
 ![Storage](https://img.shields.io/badge/storage-IndexedDB-6B7D3A)
 ![Desktop](https://img.shields.io/badge/macOS_%7C_Windows-Tauri_2-24C8DB)
 
-![千面概览页](docs/assets/interview-atlas-overview.png)
+![见字·如面主页](docs/assets/interview-atlas-overview.png)
 
 ## 它如何工作
 
-千面把原始面经视为证据，把每一次真实问答拆成原子实例，再把反复出现的问题连接到维护稳定回答的同步块。普通 AI 拆解结果由用户审核；用户明确开始的模拟面试会自动保存逐字稿和原子问答，但不会自动建立同步块关系。
+见字·如面把原始面经视为证据，把每一次真实问答拆成原子实例，再把反复出现的问题连接到维护稳定回答的同步块。普通 AI 拆解结果由用户审核；用户明确开始的模拟面试会自动保存逐字稿和原子问答，但不会自动建立同步块关系。
 
 ```text
 面试记录 → 原子问答 → 同步块 → 复习
@@ -28,14 +28,17 @@
 - 使用 Tauri 2 生成 Apple Silicon macOS `.app` 与 `.dmg`；
 - 使用 Tauri 2 生成 Windows x64 NSIS `.exe` 与 MSI 安装包；
 - 使用浏览器原生 IndexedDB 保存本地工作区；
-- 导入面经、手动拆解与 AI 辅助拆解审核；
-- 独立创建和编辑原子问答的问题、答案与笔记；
+- 导入面经、手动拆解、后台 AI 全文拆解与分阶段审核；
+- 编辑面试记录并按公司、职位、轮次、时间、标签或自定义集合整理；
+- 独立创建和编辑原子问答，使用结构化分点回答；
 - 显式建立同步块与原子问答的双向关系；
+- 全局搜索，以及同步块收藏、筛选和按关联问答数排序；
 - 简历经历的增删改查、关系管理与修改 Diff 预览；
-- 每日一问、每日推荐同步块和 AI 待审核队列；
+- 每日一问、同步块收藏夹和解耦的问答/关联审核；
 - 结合历史面试、简历与问答的 AI 模拟面试，以及会后反馈和自动入库；
+- macOS 双路录音：分别保存系统音频与麦克风音频，并可通过讯飞生成逐字稿；
 - 版本化 JSON 导出与校验恢复、显式示例数据与工作区清空；
-- OpenAI-compatible 模型服务与仅会话保存的 API Key。
+- OpenAI-compatible 模型服务，以及仅会话保存的模型和转写密钥。
 
 ## 产品原则
 
@@ -47,12 +50,14 @@
 
 ## macOS 下载安装
 
-1.0 桌面版支持 Apple Silicon Mac，系统要求为 macOS 13 及以上。
+1.1 桌面版支持 Apple Silicon Mac，系统要求为 macOS 15 及以上。
 
-1. 打开 [GitHub Releases](https://github.com/an-an-618/interview-atlas/releases/latest)，下载 `Interview-Atlas_1.0.0_aarch64.dmg` 和 `SHA256SUMS-macos.txt`。
-2. 打开 DMG，将“千面.app”拖到“Applications”快捷入口。
-3. 当前版本尚未经过 Apple 公证。首次启动时，在 Finder 中右键“千面.app”，选择“打开”，再确认一次“打开”。必要时前往“系统设置 → 隐私与安全性 → 仍要打开”。
-4. 后续可从“应用程序”、Spotlight、启动台或 Dock 打开千面。
+当前源码使用新名称“见字·如面”；已发布的旧安装包可能仍显示“千面”。
+
+1. 打开 [GitHub Releases](https://github.com/an-an-618/interview-atlas/releases/latest)，下载 `Interview-Atlas_1.1.0_aarch64.dmg` 和 `SHA256SUMS-macos.txt`。
+2. 打开 DMG，将“见字·如面.app”拖到“Applications”快捷入口。
+3. 当前版本尚未经过 Apple 公证。首次启动时，在 Finder 中右键“见字·如面.app”，选择“打开”，再确认一次“打开”。必要时前往“系统设置 → 隐私与安全性 → 仍要打开”。
+4. 后续可从“应用程序”、Spotlight、启动台或 Dock 打开见字·如面。
 
 不要关闭系统级 Gatekeeper。可在下载目录执行以下命令校验安装包：
 
@@ -64,7 +69,7 @@ shasum -a 256 -c SHA256SUMS-macos.txt
 
 ## Windows 下载安装
 
-1.0 桌面版支持 x64 Windows 10/11。打开 [GitHub Releases](https://github.com/an-an-618/interview-atlas/releases/latest)，普通用户下载并运行 `Interview-Atlas_1.0.0_x64-setup.exe`；管理部署可使用 MSI。
+1.1 桌面版支持 x64 Windows 10/11。打开 [GitHub Releases](https://github.com/an-an-618/interview-atlas/releases/latest)，普通用户下载并运行 `Interview-Atlas_1.1.0_x64-setup.exe`；管理部署可使用 MSI。双路录音目前仅支持 macOS 15。
 
 当前版本尚未进行 Authenticode 签名，Microsoft Defender SmartScreen 可能在首次启动时提示风险。构建、安装与后续签名说明见 [Windows 构建与发布](docs/engineering/windows-distribution.md)。
 
@@ -117,4 +122,4 @@ Vite 会在终端输出本地访问地址。项目不需要后端服务或账号
 
 ## 一期边界
 
-1.0 桌面版支持 Apple Silicon macOS 与 x64 Windows，仍是本地优先应用，不是托管在线服务。Linux、Intel/Universal macOS、正式签名、公证和自动更新仍待后续实现；当前不包含云同步、多人协作、企业端、自动投递、录屏、视频和实时转写。
+1.1 桌面版支持 Apple Silicon macOS 与 x64 Windows，仍是本地优先应用，不是托管在线服务。Linux、Intel/Universal macOS、正式签名、公证和自动更新仍待后续实现；当前不包含云同步、多人协作、企业端、自动投递、屏幕画面录制、视频和实时转写。

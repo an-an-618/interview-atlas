@@ -97,6 +97,7 @@ export function WorkspaceMigration({
   const counts = preview
     ? [
         ["面试记录", preview.backup.workspace.interviews.length],
+        ["整理方案", preview.backup.workspace.interviewOrganizations.length],
         ["原子问答", preview.backup.workspace.questions.length],
         ["同步块", preview.backup.workspace.syncBlocks.length],
         ["简历经历", preview.backup.workspace.resumeExperiences.length],
@@ -113,7 +114,7 @@ export function WorkspaceMigration({
           <span>
             <strong>导入 JSON 备份</strong>
             <small>
-              选择其他设备导出的千面备份；校验通过后，将替换本机当前工作区。
+              选择其他设备导出的见字·如面备份；校验通过后，将替换本机当前工作区。
             </small>
             {error && !preview ? (
               <small className="migration-error" role="alert">

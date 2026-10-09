@@ -6,6 +6,7 @@ interface ModalProps {
   title: string;
   eyebrow?: string;
   description?: string;
+  className?: string;
   children: ReactNode;
   onClose: () => void;
 }
@@ -14,6 +15,7 @@ export function Modal({
   title,
   eyebrow = "本地编辑",
   description,
+  className = "",
   children,
   onClose,
 }: ModalProps) {
@@ -25,7 +27,7 @@ export function Modal({
         onClick={onClose}
       />
       <section
-        className="modal"
+        className={`modal ${className}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"

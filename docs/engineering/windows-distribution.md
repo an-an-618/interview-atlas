@@ -1,6 +1,6 @@
 # Windows 桌面构建与发布
 
-千面复用现有 Tauri 2 桌面壳和 React/Vite 应用，不维护单独的 Windows 业务代码。
+见字·如面复用现有 Tauri 2 桌面壳和 React/Vite 应用，不维护单独的 Windows 业务代码。
 
 ## 当前支持范围
 
@@ -11,7 +11,7 @@
 
 当前安装包未经 Authenticode 签名。Windows 可能显示 Microsoft Defender SmartScreen 警告；公开发布时必须明确披露这一限制。
 
-安装包与开始菜单使用 ASCII 名称 `Interview Atlas`，避免 WiX 3 处理中文输出路径时构建失败；应用窗口标题仍显示“千面”。
+安装包与开始菜单使用 ASCII 名称 `Interview Atlas`，避免 WiX 3 处理中文输出路径时构建失败；应用窗口标题显示“见字·如面”。
 
 ## 本机构建
 
@@ -52,7 +52,8 @@ Actions 产物保留 7 天。正式版本应将签名后的安装包和 SHA-256 
 - Windows 缺少 WebView2 时，安装器会联网下载运行时引导程序。
 - Windows 桌面版拥有独立的 IndexedDB 工作区，不会自动同步浏览器或 macOS 数据。
 - 可使用“导出 JSON → 设置页迁移”在不同客户端间恢复工作区。
-- API Key 仍只保存在当前应用会话中。
+- 模型 API Key 与转写密钥仍只保存在当前应用会话中。
+- 双路录音依赖 macOS ScreenCaptureKit，Windows 版不显示为可用能力。
 
 ## 正式发布
 

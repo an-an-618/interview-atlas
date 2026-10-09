@@ -1,10 +1,10 @@
 # macOS 桌面构建与发布
 
-千面使用 Tauri 2 封装现有 React/Vite 应用。桌面壳不复制业务代码，也不新增后端服务。
+见字·如面使用 Tauri 2 封装现有 React/Vite 应用。桌面壳不复制业务代码，也不新增后端服务。
 
 ## 当前支持范围
 
-- macOS 13 及以上；
+- macOS 15 及以上；
 - Apple Silicon（`arm64` / `aarch64`）；
 - `.app` 应用包；
 - `.dmg` 拖拽安装镜像；
@@ -49,16 +49,16 @@ npm run desktop:build
 输出位置：
 
 ```text
-src-tauri/target/release/bundle/macos/千面.app
+src-tauri/target/release/bundle/macos/见字·如面.app
 src-tauri/target/release/bundle/dmg/Interview-Atlas_<version>_<architecture>.dmg
 ```
 
-构建脚本会在没有 Developer ID 签名时补充 ad-hoc 签名，并创建包含“千面.app”和“Applications”入口的压缩 DMG。
+构建脚本会在没有 Developer ID 签名时补充 ad-hoc 签名，并创建包含“见字·如面.app”和“Applications”入口的压缩 DMG。
 
 ## 安装预览包
 
 1. 打开 DMG。
-2. 将“千面.app”拖入“Applications”。
+2. 将“见字·如面.app”拖入“Applications”。
 3. 未公证版本首次打开时，在 Finder 中右键应用并选择“打开”，再次确认。
 
 不要关闭系统级 Gatekeeper。正式公开下载应使用签名和公证后的安装包。
@@ -67,7 +67,8 @@ src-tauri/target/release/bundle/dmg/Interview-Atlas_<version>_<architecture>.dmg
 
 - 桌面应用继续使用 IndexedDB，但其 WebView 工作区与 Chrome、Safari 等浏览器相互独立。
 - 浏览器数据不会自动同步到桌面应用；可通过“导出 JSON → 设置页迁移”显式恢复工作区。
-- API Key 仍只保存在当前应用会话中，不进入 IndexedDB 或导出文件。
+- 模型 API Key 与讯飞转写密钥只保存在当前应用会话中，不进入 IndexedDB 或导出文件。
+- 双路录音分别保存系统音频与麦克风音频，不保存屏幕画面；用户触发转写后，两路音频会直连发送给讯飞。
 - 恢复前会校验格式版本、字段和对象关系；校验或写入失败时保留当前工作区。
 
 ## 正式 GitHub Release

@@ -1,6 +1,6 @@
 # Interview Atlas
 
-> **千面** is a local-first workspace that turns scattered interview notes into reviewable, reusable knowledge.
+> **见字·如面** is a local-first workspace that turns scattered interview notes into reviewable, reusable knowledge.
 
 [中文说明](README.zh-CN.md) · [Download](https://github.com/an-an-618/interview-atlas/releases) · [Product context](docs/product/product-context.md) · [PRD](docs/product/prd-v1.md) · [Architecture decisions](docs/adr/README.md)
 
@@ -28,14 +28,17 @@ The current application includes:
 - a macOS Apple Silicon `.app` and `.dmg` built with Tauri 2;
 - Windows x64 NSIS `.exe` and MSI installers built with Tauri 2;
 - local persistence in the browser through IndexedDB;
-- interview import, manual structuring, and AI-assisted extraction review;
-- standalone atomic Q&A with editable questions, answers, and notes;
+- interview import, manual structuring, queued full-transcript AI extraction, and staged review;
+- interview editing and saved organization by company, role, round, date, tag, or custom collection;
+- standalone atomic Q&A with structured answer points and inline editing;
 - synchronized blocks with explicit, bidirectional relationships;
+- global search plus synchronized-block favorites, filtering, and relationship-count sorting;
 - resume experiences with CRUD, relationship management, and diff preview;
-- a daily question, recommended synchronized blocks, and an AI review queue;
+- a daily question, a synchronized-block favorites folder, and decoupled Q&A/link review;
 - AI mock interviews grounded in prior interviews, resume evidence, and Q&A, with post-interview feedback and automatic capture;
+- dual-track macOS recording for system and microphone audio, with optional Xfyun transcription;
 - validated versioned JSON export and restore, explicit demo data, and workspace deletion;
-- OpenAI-compatible providers with session-only API keys.
+- OpenAI-compatible providers with session-only model and transcription credentials.
 
 ## Product rules
 
@@ -47,12 +50,14 @@ The current application includes:
 
 ## Install on macOS
 
-The 1.0 desktop release supports Apple Silicon Macs running macOS 13 or later.
+The 1.1 desktop release supports Apple Silicon Macs running macOS 15 or later.
 
-1. Open the [latest GitHub Release](https://github.com/an-an-618/interview-atlas/releases/latest) and download `Interview-Atlas_1.0.0_aarch64.dmg` plus `SHA256SUMS-macos.txt`.
-2. Open the DMG and drag `千面.app` onto the `Applications` shortcut.
-3. The release is not Apple-notarized yet. For the first launch, Control-click `千面.app` in Finder, choose **Open**, then confirm **Open** again. If needed, use **System Settings → Privacy & Security → Open Anyway**.
-4. Later, launch 千面 from Applications, Spotlight, Launchpad, or the Dock.
+The current source uses the new Chinese name, `见字·如面`; previously published installers may still display `千面`. The English name remains Interview Atlas.
+
+1. Open the [latest GitHub Release](https://github.com/an-an-618/interview-atlas/releases/latest) and download `Interview-Atlas_1.1.0_aarch64.dmg` plus `SHA256SUMS-macos.txt`.
+2. Open the DMG and drag `见字·如面.app` onto the `Applications` shortcut.
+3. The release is not Apple-notarized yet. For the first launch, Control-click `见字·如面.app` in Finder, choose **Open**, then confirm **Open** again. If needed, use **System Settings → Privacy & Security → Open Anyway**.
+4. Later, launch 见字·如面 from Applications, Spotlight, Launchpad, or the Dock.
 
 Do not disable system-wide Gatekeeper. Verify the download with:
 
@@ -64,7 +69,7 @@ The desktop app and browser version use separate IndexedDB workspaces and do not
 
 ## Install on Windows
 
-The 1.0 desktop release targets x64 Windows 10 and 11. Open the [latest GitHub Release](https://github.com/an-an-618/interview-atlas/releases/latest) and run `Interview-Atlas_1.0.0_x64-setup.exe`. An MSI is available for managed installation.
+The 1.1 desktop release targets x64 Windows 10 and 11. Open the [latest GitHub Release](https://github.com/an-an-618/interview-atlas/releases/latest) and run `Interview-Atlas_1.1.0_x64-setup.exe`. An MSI is available for managed installation. Dual-track recording currently requires macOS 15.
 
 The release is not Authenticode-signed, so Microsoft Defender SmartScreen may warn on first launch. See the [Windows distribution guide](docs/engineering/windows-distribution.md) for build, installation, and signing details.
 
@@ -117,4 +122,4 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. Security and p
 
 ## Scope
 
-The 1.0 desktop release supports Apple Silicon macOS and x64 Windows and remains a local-first application rather than a hosted service. Linux, Intel/Universal macOS, production signing, notarization, and automatic updates remain future work. Cloud sync, collaboration, automatic applications, recording, video, and real-time transcription remain out of scope.
+The 1.1 desktop release supports Apple Silicon macOS and x64 Windows and remains a local-first application rather than a hosted service. Linux, Intel/Universal macOS, production signing, notarization, and automatic updates remain future work. Cloud sync, collaboration, automatic applications, screen-video capture, video, and real-time transcription remain out of scope.

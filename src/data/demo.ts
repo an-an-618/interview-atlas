@@ -20,6 +20,7 @@ export const createDemoWorkspace = (): Workspace => ({
       sample: true,
     },
   ],
+  interviewOrganizations: [],
   questions: [
     {
       id: "sample-event-loop",
@@ -56,6 +57,7 @@ export const createDemoWorkspace = (): Workspace => ({
         "回答按三层展开：执行栈与任务队列、微任务清空时机、浏览器渲染机会。最后结合一个 Promise 与 setTimeout 的例子。",
       reviewNotes: "下次补充 requestAnimationFrame 与微任务的先后关系。",
       linkedQuestionIds: ["sample-event-loop"],
+      favorite: true,
       pinned: false,
       hidden: false,
       createdAt,

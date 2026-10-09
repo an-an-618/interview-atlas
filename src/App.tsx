@@ -8,9 +8,11 @@ import {
   Database,
   FileUser,
   FileText,
+  FolderOpen,
   ListFilter,
   Home,
   Link2,
+  LockKeyhole,
   LoaderCircle,
   Menu,
   MessageSquareText,
@@ -18,50 +20,73 @@ import {
   PanelLeftOpen,
   Pencil,
   Plus,
+  Radio,
   RotateCcw,
   Search,
   Settings,
   Sparkles,
+  Star,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
+import { isTauri } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { createOpenAICompatibleClient } from "./ai/openAICompatibleClient";
 import type {
-  AIClient,
   AIProviderConfig,
   AIProviderCredentialId,
 } from "./ai/types";
-import { AISettingsPanel, InterviewImportDialog } from "./components/AI";
-import { QuestionForm, SyncBlockForm } from "./components/Forms";
+import { AISettingsPanel, InterviewImportPage, extractionProgressLabel } from "./components/AI";
+import { AnswerEditor } from "./components/AnswerEditor";
+import { AnswerOutline } from "./components/AnswerOutline";
+import { InterviewForm, QuestionForm, SyncBlockForm } from "./components/Forms";
+import { GlobalSearchPage } from "./components/GlobalSearch";
+import { InlineAnswer } from "./components/InlineAnswer";
+import { InlineText } from "./components/InlineText";
+import { InterviewRecorder } from "./components/InterviewRecorder";
 import { Modal } from "./components/Modal";
 import { MockInterviewPage } from "./components/MockInterview";
 import { ResumePage } from "./components/Resume";
+import { TranscriptionSettingsPanel } from "./components/TranscriptionSettings";
 import { WorkspaceMigration } from "./components/WorkspaceMigration";
 import type {
   AIReviewCandidate,
   AtomicQuestion,
+  CreateInterviewInput,
+  CreateInterviewOrganizationInput,
+  CreateQuestionInput,
   Interview,
   InterviewAIReview,
+  InterviewOrganization,
+  InterviewOrganizationMode,
   InterviewStatus,
   ResumeExperience,
-  SaveAIReviewCandidateInput,
   SyncBlock,
   UpdateAIReviewCandidateInput,
+  UpdateSyncBlockInput,
   Workspace,
 } from "./domain/types";
 import {
+  getFavoriteSyncBlocks,
   getRandomQuestion,
-  getRecommendedSyncBlocks,
+  getInterviewQuestionIds,
+  isAIReviewCandidatePending,
+  searchSyncBlocks,
   sortSyncBlocksByLinkedQuestionCount,
 } from "./domain/workspace";
 import { useAISettings } from "./hooks/useAISettings";
+import { useTranscriptionSettings } from "./hooks/useTranscriptionSettings";
 import { useWorkspace } from "./hooks/useWorkspace";
+import { useExtractionQueue } from "./hooks/useExtractionQueue";
+import { extractionActive, extractionLabel, sortInterviews } from "./ai/extractionQueue";
+import type { TranscriptionServiceConfig } from "./recording/settings";
 
 type View =
   | "overview"
+  | "review"
+  | "search"
+  | "create"
   | "mock"
   | "interviews"
   | "questions"
@@ -70,14 +95,17 @@ type View =
   | "settings";
 
 type Dialog =
-  | { kind: "interview" }
   | { kind: "question"; interviewId: string }
   | { kind: "standalone-question" }
   | { kind: "sync"; questionId?: string }
+  | { kind: "clear-workspace" }
   | null;
 
+type CreateMode = "choose" | "import" | "record";
+
 const navItems = [
-  { id: "overview" as const, label: "概览", icon: Home },
+  { id: "overview" as const, label: "主页", icon: Home },
+  { id: "search" as const, label: "全局搜索", icon: Search },
   { id: "mock" as const, label: "模拟面试", icon: MessageSquareText },
   { id: "interviews" as const, label: "面试记录", icon: FileText },
   { id: "questions" as const, label: "原子问答", icon: CircleHelp },
@@ -91,9 +119,17 @@ const knowledgeNavItems = navItems.filter((item) =>
 );
 
 const navGroups = [
-  { label: "工作台", items: navItems.slice(0, 2) },
+  {
+    label: "工作台",
+    items: navItems.filter((item) =>
+      ["overview", "search", "mock"].includes(item.id),
+    ),
+  },
   { label: "知识库", items: knowledgeNavItems },
-  { label: "系统", items: navItems.slice(6) },
+  {
+    label: "系统",
+    items: navItems.filter((item) => item.id === "settings"),
+  },
 ];
 
 function BrandMark({ compact = false }: { compact?: boolean }) {
@@ -146,9 +182,9 @@ function PageHeader({
   );
 }
 
-function StatusBadge({ status }: { status: InterviewStatus }) {
+function StatusBadge({ status, task }: { status: InterviewStatus; task?: Interview["extractionTask"] }) {
   return (
-    <span className={`status status-${status}`}>{statusLabel[status]}</span>
+    <span className={`status status-${status}`}>{task && task.status !== "completed" ? extractionLabel(task) : statusLabel[status]}</span>
   );
 }
 
@@ -171,78 +207,121 @@ function EmptyState({
   );
 }
 
+function CreatePage({
+  onImport,
+  onRecord,
+}: {
+  onImport: () => void;
+  onRecord: () => void;
+}) {
+  const modes = [
+    {
+      id: "01",
+      title: "导入面经",
+      description: "粘贴已有面经、复盘笔记或逐字稿，再由 AI 拆解为可审核的原子问答。",
+      meta: "文本导入 · AI 辅助拆解",
+      icon: Upload,
+      action: onImport,
+    },
+    {
+      id: "02",
+      title: "录制面试",
+      description: "同时记录面试官的系统音频与候选人的麦克风音频，转写后继续进入导入流程。",
+      meta: "双端录音 · macOS 桌面版",
+      icon: Radio,
+      action: onRecord,
+    },
+  ];
+
+  return (
+    <div className="page create-page">
+      <PageHeader
+        eyebrow="新建"
+        title="从哪里开始？"
+        description="选择一种方式创建面试记录。无论从文本还是录音开始，内容都会先保存在本地。"
+      />
+      <div className="create-mode-list">
+        {modes.map((mode) => {
+          const Icon = mode.icon;
+          return (
+            <button type="button" key={mode.id} onClick={mode.action}>
+              <span className="create-mode-number">{mode.id}</span>
+              <span className="create-mode-icon">
+                <Icon size={24} strokeWidth={1.6} aria-hidden="true" />
+              </span>
+              <span className="create-mode-copy">
+                <strong>{mode.title}</strong>
+                <span>{mode.description}</span>
+                <small>{mode.meta}</small>
+              </span>
+              <ChevronRight size={20} aria-hidden="true" />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function OverviewPage({
   dailyQuestion,
   interviews,
   aiReviews,
   syncBlocks,
-  recommendations,
+  favoriteSyncBlocks,
   onNavigate,
   onOpenInterview,
   onOpenQuestion,
   onOpenSync,
   onCreateInterview,
-  onUpdateAIReviewCandidate,
-  onResolveAIReviewCandidate,
-  onAcceptAllAIReviewCandidates,
+  onOpenMockInterviewRoom,
+  onOpenAIReview,
 }: {
   dailyQuestion: AtomicQuestion | null;
   interviews: Interview[];
   aiReviews: InterviewAIReview[];
   syncBlocks: SyncBlock[];
-  recommendations: SyncBlock[];
+  favoriteSyncBlocks: SyncBlock[];
   onNavigate: (view: View) => void;
   onOpenInterview: (id: string) => void;
   onOpenQuestion: (id: string) => void;
   onOpenSync: (id: string) => void;
   onCreateInterview: () => void;
-  onUpdateAIReviewCandidate: (
-    interviewId: string,
-    candidateId: string,
-    input: UpdateAIReviewCandidateInput,
-  ) => void;
-  onResolveAIReviewCandidate: (
-    interviewId: string,
-    candidateId: string,
-    decision: "accepted" | "ignored",
-    connectToSuggested?: boolean,
-  ) => void;
-  onAcceptAllAIReviewCandidates: (interviewId: string) => void;
+  onOpenMockInterviewRoom: () => void;
+  onOpenAIReview: (id: string) => void;
 }) {
-  const [reviewDrawerOpen, setReviewDrawerOpen] = useState(false);
-  const [activeReviewInterviewId, setActiveReviewInterviewId] = useState<
-    string | null
-  >(null);
   const recent = [...interviews]
-    .sort((left, right) => right.date.localeCompare(left.date))
-    .slice(0, 3);
-  const pendingReviews = aiReviews
-    .flatMap((review) => {
-      const interview = interviews.find(
-        (item) => item.id === review.interviewId,
-      );
-      const pendingCount = review.candidates.filter(
-        (candidate) => candidate.decision === "pending",
-      ).length;
-      return interview && pendingCount
+    .sort(sortInterviews)
+    .slice(0, 5);
+  const pendingReviews = interviews
+    .flatMap((interview) => {
+      const review = aiReviews.find((item) => item.interviewId === interview.id);
+      const pendingCount = review?.candidates.filter(
+        isAIReviewCandidatePending,
+      ).length ?? 0;
+      return pendingCount || (interview.extractionTask && interview.extractionTask.status !== "completed")
         ? [{ interview, review, pendingCount }]
         : [];
     })
-    .sort((left, right) =>
-      right.review.updatedAt.localeCompare(left.review.updatedAt),
-    );
-  const activePendingReview =
-    pendingReviews.find(
-      ({ interview }) => interview.id === activeReviewInterviewId,
-    ) ?? pendingReviews[0];
+    .sort((left, right) => sortInterviews(left.interview, right.interview));
   const today = new Intl.DateTimeFormat("zh-CN", {
     dateStyle: "full",
   }).format(new Date());
-  const openReviewDrawer = () => {
-    setActiveReviewInterviewId(pendingReviews[0]?.interview.id ?? null);
-    setReviewDrawerOpen(true);
-  };
-
+  const dailyQuestionSource = dailyQuestion?.sourceInterviewIds
+    .map((id) => interviews.find((interview) => interview.id === id))
+    .find((interview): interview is Interview => Boolean(interview));
+  const dailyQuestionSourceLabel = dailyQuestionSource
+    ? [
+        dailyQuestionSource.company,
+        dailyQuestionSource.role,
+        dailyQuestionSource.round,
+        dailyQuestionSource.date
+          ? formatDate(dailyQuestionSource.date)
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
   return (
     <div className="page overview-page">
       <section
@@ -263,21 +342,29 @@ function OverviewPage({
               type="button"
               onClick={() => onOpenQuestion(dailyQuestion.id)}
             >
-              <span
-                className="daily-question-title"
-                id="daily-question-title"
-                role="heading"
-                aria-level={1}
-              >
-                <span className="daily-question-quote" aria-hidden="true">
-                  “
+              <span className="daily-question-copy">
+                <span
+                  className="daily-question-title"
+                  id="daily-question-title"
+                  role="heading"
+                  aria-level={1}
+                >
+                  <span className="daily-question-quote" aria-hidden="true">
+                    “
+                  </span>
+                  <span className="daily-question-text">
+                    {dailyQuestion.title}
+                  </span>
+                  <span className="daily-question-quote" aria-hidden="true">
+                    ”
+                  </span>
                 </span>
-                <span className="daily-question-text">
-                  {dailyQuestion.title}
-                </span>
-                <span className="daily-question-quote" aria-hidden="true">
-                  ”
-                </span>
+                {dailyQuestionSourceLabel ? (
+                  <span className="daily-question-source">
+                    <span aria-hidden="true">——</span>
+                    <span>{dailyQuestionSourceLabel}</span>
+                  </span>
+                ) : null}
               </span>
               <span className="daily-question-action">
                 查看回答
@@ -300,14 +387,14 @@ function OverviewPage({
       </section>
 
       <div className="overview-content">
-        {!interviews.length ? (
+        {!interviews.length && !syncBlocks.length ? (
           <EmptyState
             title="知识库还是空的"
             description="原文会先保存在本机。之后可以手动拆成问答，不需要配置 AI。"
             action={
               <button className="button accent" onClick={onCreateInterview}>
                 <Plus size={16} aria-hidden="true" />
-                保存第一段面经
+                新建第一条记录
               </button>
             }
           />
@@ -316,14 +403,13 @@ function OverviewPage({
             <section className="panel">
               <div className="section-heading">
                 <div>
-                  <p className="eyebrow">稳定知识</p>
-                  <h2>每日推荐同步块</h2>
+                  <h2>同步块收藏夹</h2>
                 </div>
-                <span>{recommendations.length} 项</span>
+                <span>{favoriteSyncBlocks.length} 项</span>
               </div>
-              {recommendations.length ? (
-                <div className="review-list">
-                  {recommendations.map((syncBlock) => (
+              {favoriteSyncBlocks.length ? (
+                <div className="review-list favorite-sync-list">
+                  {favoriteSyncBlocks.map((syncBlock) => (
                     <button
                       className="review-row"
                       key={syncBlock.id}
@@ -348,12 +434,12 @@ function OverviewPage({
                 </div>
               ) : (
                 <div className="panel-empty">
-                  <p>创建同步块后，这里会推荐需要持续修订的稳定回答。</p>
+                  <p>在同步块页面点亮星标，常用回答会集中显示在这里。</p>
                   <button
                     className="text-button"
                     onClick={() => onNavigate("sync")}
                   >
-                    查看同步块
+                    去收藏同步块
                   </button>
                 </div>
               )}
@@ -362,7 +448,6 @@ function OverviewPage({
             <section className="panel">
               <div className="section-heading">
                 <div>
-                  <p className="eyebrow">最近输入</p>
                   <h2>近期面试</h2>
                 </div>
                 <button
@@ -388,22 +473,15 @@ function OverviewPage({
                         {interview.questionIds.length} 个问题
                       </small>
                     </span>
-                    <StatusBadge status={interview.status} />
+                    <StatusBadge status={interview.status} task={interview.extractionTask} />
                   </button>
                 ))}
               </div>
             </section>
 
             <section className="panel pending-review-panel">
-              <button
-                className="pending-review-panel-trigger"
-                type="button"
-                aria-label={`打开待审核侧边栏，共 ${pendingReviews.length} 场面试`}
-                onClick={openReviewDrawer}
-              />
               <div className="section-heading">
                 <div>
-                  <p className="eyebrow">AI 审核</p>
                   <h2>待审核</h2>
                 </div>
                 <span>{pendingReviews.length} 场</span>
@@ -411,9 +489,13 @@ function OverviewPage({
               {pendingReviews.length ? (
                 <div className="pending-review-preview">
                   {pendingReviews
-                    .slice(0, 3)
+                    .slice(0, 5)
                     .map(({ interview, pendingCount }) => (
-                      <div key={interview.id}>
+                      <button
+                        type="button"
+                        key={interview.id}
+                        onClick={() => onOpenAIReview(interview.id)}
+                      >
                         <span>
                           <strong>{interview.company}</strong>
                           <small>
@@ -422,8 +504,9 @@ function OverviewPage({
                               .join(" · ") || formatDate(interview.date)}
                           </small>
                         </span>
-                        <em>{pendingCount} 条</em>
-                      </div>
+                        <em>{interview.extractionTask && interview.extractionTask.status !== "completed" ? extractionLabel(interview.extractionTask) : `${pendingCount} 条`}</em>
+                        <ChevronRight size={14} aria-hidden="true" />
+                      </button>
                     ))}
                 </div>
               ) : (
@@ -438,173 +521,61 @@ function OverviewPage({
         )}
       </div>
 
-      {reviewDrawerOpen
-        ? createPortal(
-            <div className="interview-ai-drawer-layer">
-              <button
-                className="interview-ai-drawer-backdrop"
-                type="button"
-                aria-label="关闭待审核侧边栏"
-                onClick={() => setReviewDrawerOpen(false)}
-              />
-              <aside
-                className="overview-review-drawer"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="overview-review-drawer-title"
-              >
-                <header className="overview-review-drawer-head">
-                  <div>
-                    <p className="eyebrow">AI review queue</p>
-                    <h2 id="overview-review-drawer-title">待审核</h2>
-                    <span>
-                      {pendingReviews.length
-                        ? `${pendingReviews.length} 场面试仍有 AI 候选待确认`
-                        : "当前没有待确认的 AI 候选"}
-                    </span>
-                  </div>
-                  <button
-                    className="icon-button"
-                    type="button"
-                    title="关闭待审核侧边栏"
-                    onClick={() => setReviewDrawerOpen(false)}
-                  >
-                    <X size={18} aria-hidden="true" />
-                  </button>
-                </header>
-
-                {activePendingReview ? (
-                  <>
-                    <nav
-                      className="overview-review-queue"
-                      aria-label="待审核面试"
-                    >
-                      {pendingReviews.map(({ interview, pendingCount }) => (
-                        <button
-                          className={
-                            interview.id === activePendingReview.interview.id
-                              ? "active"
-                              : ""
-                          }
-                          type="button"
-                          key={interview.id}
-                          onClick={() =>
-                            setActiveReviewInterviewId(interview.id)
-                          }
-                        >
-                          <span>
-                            <strong>{interview.company}</strong>
-                            <small>
-                              {[interview.role, interview.round]
-                                .filter(Boolean)
-                                .join(" · ") || formatDate(interview.date)}
-                            </small>
-                          </span>
-                          <em>{pendingCount} 条</em>
-                        </button>
-                      ))}
-                    </nav>
-
-                    <div className="overview-review-focus">
-                      <header>
-                        <div>
-                          <span>
-                            {formatDate(activePendingReview.interview.date)}
-                          </span>
-                          <h3>
-                            {activePendingReview.interview.company}
-                            {activePendingReview.interview.round
-                              ? ` · ${activePendingReview.interview.round}`
-                              : ""}
-                          </h3>
-                        </div>
-                        <button
-                          className="text-button"
-                          type="button"
-                          onClick={() => {
-                            setReviewDrawerOpen(false);
-                            onOpenInterview(activePendingReview.interview.id);
-                          }}
-                        >
-                          完整面试
-                          <ChevronRight size={14} aria-hidden="true" />
-                        </button>
-                      </header>
-                      <InterviewAIAssistant
-                        review={activePendingReview.review}
-                        syncBlocks={syncBlocks}
-                        reviewRequired={false}
-                        configured
-                        loading={false}
-                        error={null}
-                        onStart={() => undefined}
-                        onOpenSettings={() => undefined}
-                        onUpdate={(candidateId, input) =>
-                          onUpdateAIReviewCandidate(
-                            activePendingReview.interview.id,
-                            candidateId,
-                            input,
-                          )
-                        }
-                        onResolve={(
-                          candidateId,
-                          decision,
-                          connectToSuggested,
-                        ) =>
-                          onResolveAIReviewCandidate(
-                            activePendingReview.interview.id,
-                            candidateId,
-                            decision,
-                            connectToSuggested,
-                          )
-                        }
-                        onAcceptAll={() =>
-                          onAcceptAllAIReviewCandidates(
-                            activePendingReview.interview.id,
-                          )
-                        }
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <div className="overview-review-drawer-empty">
-                    <CheckCircle2 size={28} aria-hidden="true" />
-                    <h3>待审核内容已处理完毕</h3>
-                    <p>新的 AI 拆解结果会继续进入这里。</p>
-                    <button
-                      className="button secondary"
-                      type="button"
-                      onClick={() => {
-                        setReviewDrawerOpen(false);
-                        onNavigate("interviews");
-                      }}
-                    >
-                      查看面试记录
-                    </button>
-                  </div>
-                )}
-              </aside>
-            </div>,
-            document.body,
-          )
-        : null}
+      <button
+        className="overview-mock-room-entry"
+        type="button"
+        onClick={onOpenMockInterviewRoom}
+      >
+        <span className="overview-mock-room-icon">
+          <MessageSquareText size={25} aria-hidden="true" />
+        </span>
+        <span className="overview-mock-room-copy">
+          <small>AI Mock Interview</small>
+          <strong>进入模拟面试间</strong>
+        </span>
+        <span className="overview-mock-room-action">
+          开始模拟
+          <ChevronRight size={18} aria-hidden="true" />
+        </span>
+      </button>
     </div>
   );
 }
 
 function InterviewsPage({
   interviews,
+  organizations,
   questions,
   aiReviews,
   onOpen,
-  onCreate,
+  onCreateOrganization,
+  onDeleteOrganization,
+  onDelete,
 }: {
   interviews: Interview[];
+  organizations: InterviewOrganization[];
   questions: AtomicQuestion[];
   aiReviews: InterviewAIReview[];
   onOpen: (id: string) => void;
-  onCreate: () => void;
+  onCreateOrganization: (
+    input: CreateInterviewOrganizationInput,
+  ) => InterviewOrganization;
+  onDeleteOrganization: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
 }) {
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const deletingInterview = interviews.find((item) => item.id === deletingId);
+  const deleteQuestionCount = deletingInterview
+    ? getInterviewQuestionIds({ interviews, questions }, deletingInterview.id).length
+    : 0;
+  const closeDelete = () => {
+    if (!deleting) {
+      setDeletingId(null);
+      setDeleteError("");
+    }
+  };
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<
     "all" | "pending" | "reviewed"
@@ -616,6 +587,12 @@ function InterviewsPage({
     tag: "",
   });
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [organizerOpen, setOrganizerOpen] = useState(false);
+  const [organizerModalOpen, setOrganizerModalOpen] = useState(false);
+  const [activeCollection, setActiveCollection] = useState<{
+    organizationId: string;
+    collectionId: string;
+  } | null>(null);
   const filterControlRef = useRef<HTMLDivElement>(null);
 
   const interviewRows = useMemo(() => {
@@ -631,7 +608,7 @@ function InterviewsPage({
         reviewByInterviewId
           .get(interview.id)
           ?.candidates.filter(
-            (candidate) => candidate.decision === "pending",
+            (candidate) => candidate.questionDecision === "pending",
           ) ?? [];
       const tags = [
         ...new Set([
@@ -690,10 +667,39 @@ function InterviewsPage({
     };
   }, [filterPanelOpen]);
 
+  useEffect(() => {
+    if (!activeCollection) return;
+    const organization = organizations.find(
+      (item) => item.id === activeCollection.organizationId,
+    );
+    if (
+      !organization?.collections.some(
+        (collection) => collection.id === activeCollection.collectionId,
+      )
+    ) {
+      setActiveCollection(null);
+    }
+  }, [activeCollection, organizations]);
+
   const activeQuickFilterCount =
-    Object.values(quickFilters).filter(Boolean).length;
+    Object.values(quickFilters).filter(Boolean).length +
+    (statusFilter === "all" ? 0 : 1);
+  const activeOrganization = activeCollection
+    ? organizations.find(
+        (organization) => organization.id === activeCollection.organizationId,
+      )
+    : undefined;
+  const selectedCollection = activeOrganization?.collections.find(
+    (collection) => collection.id === activeCollection?.collectionId,
+  );
   const rows = interviewRows
     .filter(({ interview, tags }) => {
+      if (
+        selectedCollection &&
+        !selectedCollection.interviewIds.includes(interview.id)
+      ) {
+        return false;
+      }
       if (
         statusFilter === "pending" &&
         !["draft", "pending"].includes(interview.status)
@@ -726,7 +732,7 @@ function InterviewsPage({
       return haystack.includes(query.trim().toLowerCase());
     })
     .sort((left, right) =>
-      right.interview.date.localeCompare(left.interview.date),
+      sortInterviews(left.interview, right.interview),
     );
 
   return (
@@ -737,12 +743,6 @@ function InterviewsPage({
           <>
             你的面经，<em>按你的方式</em>整理
           </>
-        }
-        action={
-          <button className="button primary desktop-action" onClick={onCreate}>
-            <Plus size={16} aria-hidden="true" />
-            新建面试
-          </button>
         }
       />
       <div className="toolbar interview-list-toolbar">
@@ -755,21 +755,22 @@ function InterviewsPage({
             placeholder="搜索公司 / 岗位 / 内容关键词"
           />
         </label>
-        <div className="segmented" aria-label="审核状态筛选">
-          {(["all", "reviewed", "pending"] as const).map((value) => (
-            <button
-              key={value}
-              className={statusFilter === value ? "active" : ""}
-              onClick={() => setStatusFilter(value)}
-            >
-              {value === "all"
-                ? "全部"
-                : value === "pending"
-                  ? "待审核"
-                  : "已审核"}
-            </button>
-          ))}
-        </div>
+        <button
+          className={`button secondary interview-organize-trigger${
+            organizerOpen ? " active" : ""
+          }`}
+          type="button"
+          aria-expanded={organizerOpen}
+          onClick={() => setOrganizerOpen((current) => !current)}
+        >
+          <FolderOpen size={15} aria-hidden="true" />
+          整理
+          {organizations.length ? (
+            <span className="interview-organize-count">
+              {organizations.length}
+            </span>
+          ) : null}
+        </button>
         <div className="interview-filter-control" ref={filterControlRef}>
           <button
             className={`button secondary interview-filter-trigger${
@@ -801,19 +802,35 @@ function InterviewsPage({
                   className="text-button"
                   type="button"
                   disabled={!activeQuickFilterCount}
-                  onClick={() =>
+                  onClick={() => {
+                    setStatusFilter("all");
                     setQuickFilters({
                       role: "",
                       company: "",
                       date: "",
                       tag: "",
-                    })
-                  }
+                    });
+                  }}
                 >
                   清除全部
                 </button>
               </header>
               <div className="interview-filter-fields">
+                <FilterSelect
+                  label="审核状态"
+                  value={statusFilter === "all" ? "" : statusFilter}
+                  emptyLabel="全部状态"
+                  options={["reviewed", "pending"]}
+                  formatOption={(option) =>
+                    option === "reviewed" ? "已审核" : "待审核"
+                  }
+                  onChange={(status) =>
+                    setStatusFilter(
+                      status === ""
+                        ? "all"
+                        : (status as "pending" | "reviewed"),
+                    )}
+                />
                 <FilterSelect
                   label="岗位名称"
                   value={quickFilters.role}
@@ -865,14 +882,104 @@ function InterviewsPage({
           ) : null}
         </div>
       </div>
+      {organizerOpen ? (
+        <section className="interview-organizer" aria-label="已保存的整理">
+          <header>
+            <div>
+              <span className="eyebrow">整理视图</span>
+              <strong>按集合查看面试记录</strong>
+            </div>
+            <button
+              className="button secondary"
+              type="button"
+              disabled={!interviews.length}
+              onClick={() => setOrganizerModalOpen(true)}
+            >
+              <Plus size={15} aria-hidden="true" />
+              新建整理
+            </button>
+          </header>
+          {organizations.length ? (
+            <div className="interview-organizer-list">
+              {organizations.map((organization) => (
+                <section className="interview-organization" key={organization.id}>
+                  <header>
+                    <div>
+                      <strong>{organization.title}</strong>
+                      <small>{organization.collections.length} 个集合</small>
+                    </div>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      aria-label={`删除整理：${organization.title}`}
+                      title="删除整理"
+                      onClick={() => onDeleteOrganization(organization.id)}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                    </button>
+                  </header>
+                  <div className="interview-collection-list">
+                    {organization.collections.map((collection) => {
+                      const active =
+                        activeCollection?.organizationId === organization.id &&
+                        activeCollection.collectionId === collection.id;
+                      return (
+                        <button
+                          className={`interview-collection-pill${
+                            active ? " active" : ""
+                          }`}
+                          type="button"
+                          key={collection.id}
+                          onClick={() =>
+                            setActiveCollection(
+                              active
+                                ? null
+                                : {
+                                    organizationId: organization.id,
+                                    collectionId: collection.id,
+                                  },
+                            )
+                          }
+                        >
+                          <span>{collection.label}</span>
+                          <small>{collection.interviewIds.length}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className="interview-organizer-empty">
+              <p>还没有保存的整理。选择公司、岗位、轮次、时间或标签即可自动聚合。</p>
+            </div>
+          )}
+        </section>
+      ) : null}
+      {selectedCollection ? (
+        <div className="active-interview-collection">
+          <span>
+            <strong>{selectedCollection.label}</strong>
+            {activeOrganization ? ` · ${activeOrganization.title}` : ""}
+          </span>
+          <button
+            className="text-button"
+            type="button"
+            onClick={() => setActiveCollection(null)}
+          >
+            查看全部
+          </button>
+        </div>
+      ) : null}
       {rows.length ? (
         <div className="interview-list">
           {rows.map(({ interview, tags, visibleQuestionCount }) => (
-            <button
+            <article
               className="interview-row"
               key={interview.id}
-              onClick={() => onOpen(interview.id)}
             >
+              <button className="interview-open" onClick={() => onOpen(interview.id)}>
               <span className="interview-main">
                 <span className="interview-title-line">
                   <strong>{interview.company}</strong>
@@ -881,7 +988,7 @@ function InterviewsPage({
                   ) : null}
                 </span>
                 <small>
-                  {[interview.role, interview.source, interview.round]
+                  {[interview.role, interview.round]
                     .filter(Boolean)
                     .join(" · ") || "未填写岗位和轮次"}
                 </small>
@@ -899,12 +1006,21 @@ function InterviewsPage({
                 {tags.length > 3 ? <small>+{tags.length - 3}</small> : null}
               </span>
               <span className="interview-row-end">
-                <StatusBadge status={interview.status} />
+                <StatusBadge status={interview.status} task={interview.extractionTask} />
                 <span className="interview-count">
                   {visibleQuestionCount} 个问题
                 </span>
               </span>
-            </button>
+              </button>
+              <button
+                className="icon-button interview-delete"
+                aria-label={`删除面试记录：${interview.company}`}
+                title="删除面试记录"
+                onClick={() => { setDeleteError(""); setDeletingId(interview.id); }}
+              >
+                <Trash2 size={16} aria-hidden="true" />
+              </button>
+            </article>
           ))}
         </div>
       ) : (
@@ -915,15 +1031,68 @@ function InterviewsPage({
               ? "调整搜索词或筛选条件。"
               : "先完整保存原文，再逐步整理。"
           }
-          action={
-            !interviews.length ? (
-              <button className="button primary" onClick={onCreate}>
-                导入面经
-              </button>
-            ) : null
-          }
         />
       )}
+      {organizerModalOpen ? (
+        <InterviewOrganizerModal
+          interviews={interviews}
+          interviewRows={interviewRows}
+          onClose={() => setOrganizerModalOpen(false)}
+          onSave={(input) => {
+            const organization = onCreateOrganization(input);
+            setOrganizerOpen(true);
+            setOrganizerModalOpen(false);
+            const firstCollection = organization.collections[0];
+            if (firstCollection) {
+              setActiveCollection({
+                organizationId: organization.id,
+                collectionId: firstCollection.id,
+              });
+            }
+          }}
+        />
+      ) : null}
+      {deletingInterview ? (
+        <Modal title="删除面试记录？" eyebrow="永久删除" className="interview-delete-modal" onClose={closeDelete}>
+          <div className="interview-delete-body">
+            <div className="interview-delete-record">
+              <FileText size={20} aria-hidden="true" />
+              <div>
+                <strong>{deletingInterview.company}</strong>
+                <span>{[deletingInterview.role || "岗位未填写", deletingInterview.round, deletingInterview.date].filter(Boolean).join(" · ")}</span>
+              </div>
+            </div>
+            <div className="interview-delete-scope">
+              <div>
+                <h3>将永久删除</h3>
+                <p>这条面试记录及原文、<strong>{deleteQuestionCount} 个原子问答</strong>和 AI 审核记录，并解除相关引用。</p>
+              </div>
+              <div>
+                <h3>仍然保留</h3>
+                <p>关联的同步块、简历经历，以及它们的其他内容与关联。</p>
+              </div>
+            </div>
+            <p className="interview-delete-note">若其中的问答被其他面试共用，该问答也会一并删除。</p>
+            {deleteError ? <p className="inline-error" role="alert">{deleteError}</p> : null}
+          </div>
+          <footer className="form-actions interview-delete-actions">
+            <span>此操作无法撤销</span>
+            <button className="button quiet" autoFocus disabled={deleting} onClick={closeDelete}>取消</button>
+            <button className="button danger" disabled={deleting} onClick={async () => {
+              setDeleting(true);
+              setDeleteError("");
+              try {
+                await onDelete(deletingInterview.id);
+                setDeletingId(null);
+              } catch (reason) {
+                setDeleteError(reason instanceof Error ? reason.message : "删除失败，请重试。");
+              } finally {
+                setDeleting(false);
+              }
+            }}>{deleting ? "正在删除…" : "确认永久删除"}</button>
+          </footer>
+        </Modal>
+      ) : null}
     </div>
   );
 }
@@ -964,21 +1133,293 @@ function FilterSelect({
   );
 }
 
-function AIAssistantSuggestion({
+const organizationModeOptions: Array<{
+  value: InterviewOrganizationMode;
+  label: string;
+  title: string;
+}> = [
+  { value: "company", label: "公司", title: "按公司整理" },
+  { value: "role", label: "职位", title: "按职位整理" },
+  { value: "round", label: "轮次", title: "按轮次整理" },
+  { value: "date", label: "时间", title: "按时间整理" },
+  { value: "tag", label: "标签", title: "按标签整理" },
+  { value: "custom", label: "自定义", title: "自定义整理" },
+];
+
+function buildPresetInterviewCollections(
+  mode: Exclude<InterviewOrganizationMode, "custom">,
+  interviewRows: Array<{
+    interview: Interview;
+    tags: string[];
+  }>,
+): CreateInterviewOrganizationInput["collections"] {
+  const groups = new Map<string, string[]>();
+  interviewRows.forEach(({ interview, tags }) => {
+    let values: string[];
+    if (mode === "company") values = [interview.company || "公司未填写"];
+    else if (mode === "role") values = [interview.role || "职位未填写"];
+    else if (mode === "round") values = [interview.round || "轮次未填写"];
+    else if (mode === "date") {
+      values = [
+        interview.date
+          ? `${interview.date.slice(0, 4)}年${interview.date.slice(5, 7)}月`
+          : "时间未填写",
+      ];
+    } else {
+      values = tags;
+    }
+
+    values.filter(Boolean).forEach((value) => {
+      groups.set(value, [...(groups.get(value) ?? []), interview.id]);
+    });
+  });
+
+  return [...groups.entries()]
+    .map(([label, interviewIds]) => ({ label, interviewIds }))
+    .sort(
+      (left, right) =>
+        right.interviewIds.length - left.interviewIds.length ||
+        left.label.localeCompare(right.label, "zh-CN"),
+    );
+}
+
+function InterviewOrganizerModal({
+  interviews,
+  interviewRows,
+  onClose,
+  onSave,
+}: {
+  interviews: Interview[];
+  interviewRows: Array<{
+    interview: Interview;
+    tags: string[];
+  }>;
+  onClose: () => void;
+  onSave: (input: CreateInterviewOrganizationInput) => void;
+}) {
+  const [mode, setMode] = useState<InterviewOrganizationMode>("company");
+  const [title, setTitle] = useState("按公司整理");
+  const [customCollections, setCustomCollections] = useState<
+    Array<{ key: string; label: string; interviewIds: string[] }>
+  >(() => [{ key: crypto.randomUUID(), label: "", interviewIds: [] }]);
+  const [error, setError] = useState("");
+  const presetCollections =
+    mode === "custom"
+      ? []
+      : buildPresetInterviewCollections(mode, interviewRows);
+  const collections =
+    mode === "custom"
+      ? customCollections.map(({ label, interviewIds }) => ({
+          label,
+          interviewIds,
+        }))
+      : presetCollections;
+
+  const updateCustomCollection = (
+    key: string,
+    update: Partial<{ label: string; interviewIds: string[] }>,
+  ) => {
+    setCustomCollections((current) =>
+      current.map((collection) =>
+        collection.key === key ? { ...collection, ...update } : collection,
+      ),
+    );
+  };
+
+  return (
+    <Modal
+      title="新建整理"
+      eyebrow="面试记录 · Organize"
+      description="保存后会形成可反复打开的集合视图。"
+      className="interview-organizer-modal"
+      onClose={onClose}
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          setError("");
+          try {
+            onSave({ title, mode, collections });
+          } catch (reason) {
+            setError(
+              reason instanceof Error ? reason.message : "整理保存失败，请重试。",
+            );
+          }
+        }}
+      >
+        <fieldset className="organizer-mode-fieldset">
+          <legend>整理方式</legend>
+          <div className="organizer-mode-grid">
+            {organizationModeOptions.map((option) => (
+              <button
+                className={mode === option.value ? "active" : ""}
+                type="button"
+                aria-pressed={mode === option.value}
+                key={option.value}
+                onClick={() => {
+                  setMode(option.value);
+                  setTitle(option.title);
+                  setError("");
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+        <label>
+          整理名称
+          <input
+            value={title}
+            maxLength={40}
+            placeholder="例如：目标公司"
+            onChange={(event) => setTitle(event.target.value)}
+          />
+        </label>
+        {mode === "custom" ? (
+          <section className="custom-collection-editor">
+            <header>
+              <div>
+                <strong>自定义枚举值</strong>
+                <small>设置选项名称，并选择纳入该集合的面试记录。</small>
+              </div>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() =>
+                  setCustomCollections((current) => [
+                    ...current,
+                    {
+                      key: crypto.randomUUID(),
+                      label: "",
+                      interviewIds: [],
+                    },
+                  ])
+                }
+              >
+                <Plus size={14} aria-hidden="true" />
+                添加选项
+              </button>
+            </header>
+            <div className="custom-collection-list">
+              {customCollections.map((collection, index) => (
+                <section className="custom-collection" key={collection.key}>
+                  <header>
+                    <label>
+                      选项名称
+                      <input
+                        value={collection.label}
+                        maxLength={30}
+                        placeholder={`例如：${index === 0 ? "重点跟进" : "备选机会"}`}
+                        onChange={(event) =>
+                          updateCustomCollection(collection.key, {
+                            label: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      disabled={customCollections.length === 1}
+                      aria-label="删除选项"
+                      title="删除选项"
+                      onClick={() =>
+                        setCustomCollections((current) =>
+                          current.filter((item) => item.key !== collection.key),
+                        )
+                      }
+                    >
+                      <Trash2 size={15} aria-hidden="true" />
+                    </button>
+                  </header>
+                  <div className="custom-interview-picker">
+                    {interviews.map((interview) => {
+                      const checked = collection.interviewIds.includes(
+                        interview.id,
+                      );
+                      return (
+                        <label key={interview.id}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              updateCustomCollection(collection.key, {
+                                interviewIds: checked
+                                  ? collection.interviewIds.filter(
+                                      (id) => id !== interview.id,
+                                    )
+                                  : [...collection.interviewIds, interview.id],
+                              })
+                            }
+                          />
+                          <span>
+                            <strong>{interview.company || "公司未填写"}</strong>
+                            <small>
+                              {[interview.role, interview.round, interview.date]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </small>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </section>
+        ) : (
+          <section className="preset-collection-preview">
+            <header>
+              <strong>自动聚合结果</strong>
+              <small>{presetCollections.length} 个集合</small>
+            </header>
+            {presetCollections.length ? (
+              <div>
+                {presetCollections.map((collection) => (
+                  <span className="interview-collection-pill" key={collection.label}>
+                    <span>{collection.label}</span>
+                    <small>{collection.interviewIds.length}</small>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p>当前面试记录中没有可用于此方式的内容。</p>
+            )}
+          </section>
+        )}
+        {error ? <p className="inline-error" role="alert">{error}</p> : null}
+        <footer className="form-actions">
+          <button className="button quiet" type="button" onClick={onClose}>
+            取消
+          </button>
+          <button
+            className="button primary"
+            type="submit"
+            disabled={!title.trim() || !collections.some(
+              (collection) =>
+                collection.label.trim() && collection.interviewIds.length,
+            )}
+          >
+            保存整理
+          </button>
+        </footer>
+      </form>
+    </Modal>
+  );
+}
+
+function AIQuestionReviewCard({
   candidate,
   index,
-  syncBlock,
   onUpdate,
   onResolve,
 }: {
   candidate: AIReviewCandidate;
   index: number;
-  syncBlock?: SyncBlock;
   onUpdate: (input: UpdateAIReviewCandidateInput) => void;
-  onResolve: (
-    decision: "accepted" | "ignored",
-    connectToSuggested?: boolean,
-  ) => void;
+  onResolve: (decision: "accepted" | "ignored") => void;
 }) {
   const [title, setTitle] = useState(candidate.title);
   const [answer, setAnswer] = useState(candidate.answer);
@@ -993,27 +1434,50 @@ function AIAssistantSuggestion({
     });
   };
 
-  const resolve = (
-    decision: "accepted" | "ignored",
-    connectToSuggested = false,
-  ) => {
+  const resolveQuestion = (decision: "accepted" | "ignored") => {
     persist();
-    onResolve(decision, connectToSuggested);
+    setExpanded(false);
+    onResolve(decision);
   };
 
   return (
-    <article>
-      <small>{syncBlock ? "同步候选" : "问答候选"}</small>
-      <strong>
-        Q{String(index + 1).padStart(2, "0")}{" "}
-        {syncBlock ? `建议关联「${syncBlock.title}」` : title}
-      </strong>
-      <p>
-        {candidate.matchReason ||
-          candidate.sourceExcerpt ||
-          "请结合原文核对后决定。"}
-      </p>
-      {expanded ? (
+    <article
+      className={`ai-question-review-card ${candidate.questionDecision}`}
+    >
+      <header>
+        <span>Q{String(index + 1).padStart(2, "0")}</span>
+        {candidate.questionDecision === "pending" ? (
+          <strong>待审核</strong>
+        ) : (
+          <strong className={`ai-review-decision-status ${candidate.questionDecision}`}>
+            {candidate.questionDecision === "accepted" ? (
+              <CheckCircle2 size={14} aria-hidden="true" />
+            ) : null}
+            {candidate.questionDecision === "accepted" ? "已采纳" : "已忽略"}
+          </strong>
+        )}
+      </header>
+      <h3>{title}</h3>
+      <div className="ai-question-review-answer">
+        <span>候选回答</span>
+        <AnswerOutline
+          answer={answer}
+          emptyText="原文中没有明确回答。"
+          className="compact"
+        />
+      </div>
+      <blockquote>
+        <span>原文依据</span>
+        {candidate.sourceExcerpt || "AI 未返回对应原文片段。"}
+      </blockquote>
+      {candidate.tags.length ? (
+        <div className="tag-row">
+          {candidate.tags.map((tag) => (
+            <span className="tag" key={tag}>{tag}</span>
+          ))}
+        </div>
+      ) : null}
+      {candidate.questionDecision === "pending" && expanded ? (
         <div className="interview-ai-suggestion-detail">
           <label>
             <span>问题</span>
@@ -1022,15 +1486,16 @@ function AIAssistantSuggestion({
               onChange={(event) => setTitle(event.target.value)}
             />
           </label>
-          <label>
+          <div className="answer-editor-field">
             <span>当次回答</span>
-            <textarea
+            <AnswerEditor
               value={answer}
-              onChange={(event) => setAnswer(event.target.value)}
-              rows={4}
+              onChange={setAnswer}
+              label="当次回答"
+              minRows={4}
               placeholder="原文没有明确回答时保持为空"
             />
-          </label>
+          </div>
           <label>
             <span>标签</span>
             <input
@@ -1055,164 +1520,376 @@ function AIAssistantSuggestion({
           </button>
         </div>
       ) : null}
-      <footer>
-        <button
-          className="button primary"
-          type="button"
-          disabled={!title.trim()}
-          onClick={() => resolve("accepted", Boolean(syncBlock))}
-        >
-          {syncBlock ? "采纳并关联" : "采纳问答"}
-        </button>
-        <button
-          className="button secondary"
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((current) => !current)}
-        >
-          {expanded ? "收起" : "查看"}
-          <ChevronRight size={13} aria-hidden="true" />
-        </button>
-        <button
-          className="button quiet"
-          type="button"
-          onClick={() => resolve("ignored")}
-        >
-          忽略
-        </button>
-      </footer>
+      {candidate.questionDecision === "pending" ? (
+        <footer>
+          <button
+            className="button secondary"
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((current) => !current)}
+          >
+            {expanded ? "收起详情" : "查看详情"}
+            <ChevronRight size={13} aria-hidden="true" />
+          </button>
+          <div>
+            <button
+              className="button quiet"
+              type="button"
+              onClick={() => resolveQuestion("ignored")}
+            >
+              忽略
+            </button>
+            <button
+              className="button primary"
+              type="button"
+              disabled={!title.trim()}
+              onClick={() => resolveQuestion("accepted")}
+            >
+              采纳为原子问答
+            </button>
+          </div>
+        </footer>
+      ) : null}
     </article>
   );
 }
 
-function InterviewAIAssistant({
+function AISyncReviewCard({
+  candidate,
+  index,
+  syncBlock,
+  onResolve,
+}: {
+  candidate: AIReviewCandidate;
+  index: number;
+  syncBlock?: SyncBlock;
+  onResolve: (decision: "accepted" | "ignored") => void;
+}) {
+  return (
+    <article className={`ai-sync-review-card ${candidate.syncDecision}`}>
+      <header>
+        <span>关联建议 {String(index + 1).padStart(2, "0")}</span>
+        {candidate.syncDecision === "pending" ? (
+          <strong>待审核</strong>
+        ) : (
+          <strong className={`ai-review-decision-status ${candidate.syncDecision}`}>
+            {candidate.syncDecision === "accepted" ? (
+              <CheckCircle2 size={14} aria-hidden="true" />
+            ) : null}
+            {candidate.syncDecision === "accepted" ? "已关联" : "已忽略"}
+          </strong>
+        )}
+      </header>
+      <div className="ai-sync-review-route">
+        <div>
+          <span>原子问答</span>
+          <strong>{candidate.title}</strong>
+        </div>
+        <Link2 size={18} aria-hidden="true" />
+        <div>
+          <span>目标同步块</span>
+          <strong>{syncBlock?.title ?? "同步块已不存在"}</strong>
+        </div>
+      </div>
+      {candidate.matchReason ? <p>{candidate.matchReason}</p> : null}
+      {syncBlock?.body ? (
+        <blockquote>
+          <span>稳定回答摘要</span>
+          {syncBlock.body}
+        </blockquote>
+      ) : null}
+      {candidate.syncDecision === "pending" ? (
+        <footer>
+          <button
+            className="button quiet"
+            type="button"
+            onClick={() => onResolve("ignored")}
+          >
+            忽略关联
+          </button>
+          <button
+            className="button primary"
+            type="button"
+            disabled={!syncBlock}
+            onClick={() => onResolve("accepted")}
+          >
+            <Link2 size={14} aria-hidden="true" />
+            确认关联
+          </button>
+        </footer>
+      ) : null}
+    </article>
+  );
+}
+
+function AIReviewPage({
+  interview,
   review,
   syncBlocks,
-  reviewRequired,
   configured,
-  loading,
-  error,
-  onStart,
+  onBack,
+  onOpenInterview,
+  onStartExtraction,
+  onCancelExtraction,
   onOpenSettings,
   onUpdate,
-  onResolve,
+  onResolveQuestion,
+  onResolveSync,
   onAcceptAll,
 }: {
+  interview: Interview;
   review?: InterviewAIReview;
   syncBlocks: SyncBlock[];
-  reviewRequired: boolean;
   configured: boolean;
-  loading: boolean;
-  error: string | null;
-  onStart: () => void;
+  onBack: () => void;
+  onOpenInterview: () => void;
+  onStartExtraction: () => void;
+  onCancelExtraction: () => void;
   onOpenSettings: () => void;
   onUpdate: (candidateId: string, input: UpdateAIReviewCandidateInput) => void;
-  onResolve: (
+  onResolveQuestion: (
     candidateId: string,
     decision: "accepted" | "ignored",
-    connectToSuggested?: boolean,
+  ) => void;
+  onResolveSync: (
+    candidateId: string,
+    decision: "accepted" | "ignored",
   ) => void;
   onAcceptAll: () => void;
 }) {
-  const pending =
-    review?.candidates.filter(
-      (candidate) => candidate.decision === "pending",
-    ) ?? [];
-  const handled = review ? review.candidates.length - pending.length : 0;
+  const [sourceExpanded, setSourceExpanded] = useState(false);
+  const loading = extractionActive(interview.extractionTask);
+  const pendingQuestions = review?.candidates.filter(
+    (candidate) => candidate.questionDecision === "pending",
+  ) ?? [];
+  const acceptedQuestions = review?.candidates.filter(
+    (candidate) => candidate.questionDecision === "accepted",
+  ) ?? [];
+  const syncCandidates = acceptedQuestions.filter(
+    (candidate) => candidate.suggestedSyncBlockId,
+  );
+  const pendingSync = syncCandidates.filter(
+    (candidate) => candidate.syncDecision === "pending",
+  );
+  const questionsComplete = Boolean(review) && pendingQuestions.length === 0;
+  const reviewComplete =
+    questionsComplete && pendingSync.length === 0;
 
   return (
-    <section className="interview-ai-assistant">
-      <div className="interview-ai-heading">
-        <p className="eyebrow">AI 助理</p>
+    <div className="page ai-review-page">
+      <header className="ai-review-page-toolbar">
+        <button className="back-button" type="button" onClick={onBack}>
+          <ArrowLeft size={16} aria-hidden="true" />
+          返回
+        </button>
+        <button className="text-button" type="button" onClick={onOpenInterview}>
+          查看完整面试
+          <ChevronRight size={14} aria-hidden="true" />
+        </button>
+      </header>
+
+      <section className="ai-review-page-hero">
+        <div>
+          <p className="eyebrow">AI 解析审核 · {formatDate(interview.date)}</p>
+          <h1>
+            {interview.company}
+            {interview.role ? <em> · {interview.role}</em> : null}
+          </h1>
+          <p>
+            {[interview.round, interview.source].filter(Boolean).join(" · ") ||
+              "面试记录"}
+          </p>
+        </div>
         {review ? (
-          <span>
-            {handled}/{review.candidates.length}
-          </span>
+          <div className={`ai-review-overall-status ${reviewComplete ? "complete" : ""}`}>
+            {reviewComplete ? (
+              <CheckCircle2 size={18} aria-hidden="true" />
+            ) : (
+              <Sparkles size={18} aria-hidden="true" />
+            )}
+            <span>
+              <small>审核状态</small>
+              <strong>{reviewComplete ? "已全部完成" : "正在审核"}</strong>
+            </span>
+          </div>
         ) : null}
-      </div>
+      </section>
+
+      <section className={`source-band ${sourceExpanded ? "expanded" : "collapsed"}`}>
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Source</p>
+            <h2>原始面经</h2>
+          </div>
+          <button
+            className="source-toggle"
+            type="button"
+            aria-expanded={sourceExpanded}
+            onClick={() => setSourceExpanded((current) => !current)}
+          >
+            {sourceExpanded ? "收起" : "展开核对原文"}
+            <ChevronDown size={15} aria-hidden="true" />
+          </button>
+        </div>
+        <div className="source-content" aria-hidden={!sourceExpanded}>
+          <div><p>{interview.rawText}</p></div>
+        </div>
+      </section>
 
       {loading ? (
-        <div className="interview-ai-empty">
+        <div className="ai-review-page-state">
           <LoaderCircle className="spin" size={21} aria-hidden="true" />
-          <strong>正在拆解面经</strong>
-          <p>识别候选问题、当次回答与同步块建议。</p>
+          <strong>
+            {interview.extractionTask?.status === "queued"
+              ? "排队中"
+              : "正在拆解面经"}
+          </strong>
+          <p aria-live="polite">
+            {interview.extractionTask?.status === "queued"
+              ? "前一条面经完成后会自动开始。"
+              : extractionProgressLabel(interview.extractionTask?.progress ?? null)}
+          </p>
+          <p>切换页面后会继续处理，完成时会通知你。</p>
+          <button className="text-button" type="button" onClick={onCancelExtraction}>
+            取消拆解
+          </button>
         </div>
-      ) : !review && reviewRequired ? (
-        <div className="interview-ai-empty">
+      ) : !review ? (
+        <div className="ai-review-page-state">
           <Sparkles size={20} aria-hidden="true" />
           <strong>这场面经尚未拆解</strong>
           <p>原文已保存在本地，可以稍后调用 AI 生成审核清单。</p>
           <button
             className="button primary"
             type="button"
-            onClick={configured ? onStart : onOpenSettings}
+            onClick={configured ? onStartExtraction : onOpenSettings}
           >
             <Sparkles size={14} aria-hidden="true" />
             {configured ? "开始 AI 拆解" : "配置 AI 服务"}
           </button>
         </div>
-      ) : !review ? (
-        <div className="interview-ai-empty complete">
-          <CheckCircle2 size={21} aria-hidden="true" />
-          <strong>当前没有待处理建议</strong>
-          <p>这场面试已经完成整理。</p>
-        </div>
-      ) : pending.length ? (
+      ) : (
         <>
-          <div className="interview-ai-summary">
-            <strong>{pending.length} 条建议待处理</strong>
-            <span>逐条采纳或忽略后自动完成审核。</span>
-          </div>
-          <div className="interview-ai-suggestions">
-            {pending.map((candidate) => {
-              const syncBlock = syncBlocks.find(
-                (item) => item.id === candidate.suggestedSyncBlockId,
-              );
-              const candidateIndex = review.candidates.findIndex(
-                (item) => item.id === candidate.id,
-              );
-              return (
-                <AIAssistantSuggestion
+          <nav className="ai-review-stage-nav" aria-label="审核进度">
+            <a href="#question-review-stage" className={questionsComplete ? "complete" : "active"}>
+              <span>{questionsComplete ? <CheckCircle2 size={15} /> : "1"}</span>
+              <strong>审核原子问答</strong>
+              <small>{review.candidates.length - pendingQuestions.length}/{review.candidates.length}</small>
+            </a>
+            <i aria-hidden="true" />
+            <a
+              href="#sync-review-stage"
+              className={reviewComplete ? "complete" : questionsComplete ? "active" : "locked"}
+            >
+              <span>{reviewComplete ? <CheckCircle2 size={15} /> : "2"}</span>
+              <strong>审核同步块</strong>
+              <small>{syncCandidates.length - pendingSync.length}/{syncCandidates.length}</small>
+            </a>
+          </nav>
+
+          <section className="ai-review-stage" id="question-review-stage">
+            <header>
+              <span className="ai-review-stage-number">01</span>
+              <div>
+                <p className="eyebrow">Atomic questions</p>
+                <h2>审核原子问答</h2>
+                <p>逐条核对问题、回答和原文依据。采纳后才会写入原子问答库。</p>
+              </div>
+              <strong>{pendingQuestions.length ? `${pendingQuestions.length} 条待处理` : "已完成"}</strong>
+            </header>
+            <div className="ai-question-review-list">
+              {review.candidates.map((candidate, index) => (
+                <AIQuestionReviewCard
                   key={candidate.id}
                   candidate={candidate}
-                  index={candidateIndex}
-                  syncBlock={syncBlock}
+                  index={index}
                   onUpdate={(input) => onUpdate(candidate.id, input)}
-                  onResolve={(decision, connectToSuggested) =>
-                    onResolve(candidate.id, decision, connectToSuggested)
-                  }
+                  onResolve={(decision) => onResolveQuestion(candidate.id, decision)}
                 />
-              );
-            })}
-          </div>
-          {pending.length > 1 ? (
-            <button
-              className="button secondary interview-ai-accept-all"
-              type="button"
-              onClick={onAcceptAll}
-            >
-              <CheckCircle2 size={14} aria-hidden="true" />
-              全部采纳为原子问答
-            </button>
+              ))}
+            </div>
+            {pendingQuestions.length > 1 ? (
+              <footer className="ai-review-stage-actions">
+                <button className="button secondary" type="button" onClick={onAcceptAll}>
+                  <CheckCircle2 size={15} aria-hidden="true" />
+                  全部采纳为原子问答
+                </button>
+              </footer>
+            ) : null}
+          </section>
+
+          <section
+            className={`ai-review-stage ai-sync-review-stage${questionsComplete ? "" : " locked"}`}
+            id="sync-review-stage"
+          >
+            <header>
+              <span className="ai-review-stage-number">02</span>
+              <div>
+                <p className="eyebrow">Sync blocks</p>
+                <h2>审核同步块关联</h2>
+                <p>只处理已采纳问答的关联建议。忽略关联不会影响上一步保存的问答。</p>
+              </div>
+              <strong>
+                {!questionsComplete
+                  ? "等待上一步"
+                  : pendingSync.length
+                    ? `${pendingSync.length} 条待处理`
+                    : "已完成"}
+              </strong>
+            </header>
+            {!questionsComplete ? (
+              <div className="ai-sync-review-locked">
+                <LockKeyhole size={22} aria-hidden="true" />
+                <strong>先完成原子问答审核</strong>
+                <p>所有问答均采纳或忽略后，这里的同步块关联建议才会开放。</p>
+              </div>
+            ) : syncCandidates.length ? (
+              <div className="ai-sync-review-list">
+                {syncCandidates.map((candidate, index) => (
+                  <AISyncReviewCard
+                    key={candidate.id}
+                    candidate={candidate}
+                    index={index}
+                    syncBlock={syncBlocks.find(
+                      (item) => item.id === candidate.suggestedSyncBlockId,
+                    )}
+                    onResolve={(decision) => onResolveSync(candidate.id, decision)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="ai-review-page-state complete">
+                <CheckCircle2 size={21} aria-hidden="true" />
+                <strong>没有需要审核的同步块关联</strong>
+                <p>已采纳的原子问答会独立保存在问答库中。</p>
+              </div>
+            )}
+          </section>
+
+          {reviewComplete ? (
+            <div className="ai-review-complete-banner">
+              <CheckCircle2 size={20} aria-hidden="true" />
+              <div>
+                <strong>本次 AI 解析审核已完成</strong>
+                <p>原子问答和同步块关联均已按你的决策保存。</p>
+              </div>
+              <button className="button secondary" type="button" onClick={onOpenInterview}>
+                返回面试详情
+              </button>
+            </div>
           ) : null}
         </>
-      ) : (
-        <div className="interview-ai-empty complete">
-          <CheckCircle2 size={21} aria-hidden="true" />
-          <strong>AI 建议已全部处理</strong>
-          <p>采纳的内容已进入原子问答，忽略项仍保留审核记录。</p>
-        </div>
       )}
 
-      {error ? (
-        <div className="interview-ai-error" role="alert">
-          <span>{error}</span>
-          <button className="text-button" type="button" onClick={onStart}>
+      {interview.extractionTask?.error ? (
+        <div className="ai-review-page-error" role="alert">
+          <span>{interview.extractionTask.error}</span>
+          <button className="text-button" type="button" onClick={onStartExtraction}>
             重试
           </button>
         </div>
       ) : null}
-    </section>
+    </div>
   );
 }
 
@@ -1222,60 +1899,35 @@ function InterviewDetail({
   syncBlocks,
   resumeExperiences,
   aiReview,
-  aiClient,
-  aiConfig,
-  aiApiKey,
-  aiConfigured,
   onBack,
   onAddQuestion,
   onOpenSync,
   onOpenResume,
   onCreateSync,
-  onSaveAIReview,
-  onUpdateAIReviewCandidate,
-  onResolveAIReviewCandidate,
-  onAcceptAllAIReviewCandidates,
-  onOpenAISettings,
+  onOpenAIReview,
   onOpenMockInterview,
+  onUpdateInterview,
+  onUpdateQuestion,
 }: {
   interview: Interview;
   questions: AtomicQuestion[];
   syncBlocks: SyncBlock[];
   resumeExperiences: ResumeExperience[];
   aiReview?: InterviewAIReview;
-  aiClient: AIClient;
-  aiConfig: AIProviderConfig;
-  aiApiKey: string;
-  aiConfigured: boolean;
   onBack: () => void;
   onAddQuestion: () => void;
   onOpenSync: (id: string) => void;
   onOpenResume: (id: string) => void;
   onCreateSync: (questionId: string) => void;
-  onSaveAIReview: (
-    interviewId: string,
-    candidates: SaveAIReviewCandidateInput[],
-  ) => void;
-  onUpdateAIReviewCandidate: (
-    interviewId: string,
-    candidateId: string,
-    input: UpdateAIReviewCandidateInput,
-  ) => void;
-  onResolveAIReviewCandidate: (
-    interviewId: string,
-    candidateId: string,
-    decision: "accepted" | "ignored",
-    connectToSuggested?: boolean,
-  ) => void;
-  onAcceptAllAIReviewCandidates: (interviewId: string) => void;
-  onOpenAISettings: () => void;
+  onOpenAIReview: () => void;
   onOpenMockInterview: (id: string) => void;
+  onUpdateInterview: (id: string, input: CreateInterviewInput) => void;
+  onUpdateQuestion: (id: string, input: CreateQuestionInput) => void;
 }) {
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
+  const editingQuestion = questions.find((item) => item.id === editingQuestionId);
   const [sourceExpanded, setSourceExpanded] = useState(false);
-  const [aiLoading, setAILoading] = useState(false);
-  const [aiError, setAIError] = useState<string | null>(null);
-  const [mobileAIOpen, setMobileAIOpen] = useState(false);
-  const aiControllerRef = useRef<AbortController | null>(null);
   const interviewQuestions = interview.questionIds
     .map((id) => questions.find((question) => question.id === id))
     .filter((question): question is AtomicQuestion => Boolean(question));
@@ -1306,90 +1958,15 @@ function InterviewDetail({
     ),
   );
 
-  useEffect(
-    () => () => {
-      aiControllerRef.current?.abort();
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (!mobileAIOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileAIOpen(false);
-    };
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [mobileAIOpen]);
-
-  const startAIReview = async () => {
-    if (!aiConfigured || aiLoading) return;
-    const controller = new AbortController();
-    aiControllerRef.current = controller;
-    setAILoading(true);
-    setAIError(null);
-    try {
-      const extracted = await aiClient.extractInterview(
-        aiConfig,
-        aiApiKey,
-        { interview, syncBlocks },
-        controller.signal,
-      );
-      onSaveAIReview(
-        interview.id,
-        extracted.map((candidate) => ({
-          ...candidate,
-          selected: true,
-          connectToSuggested: false,
-        })),
-      );
-    } catch (reason) {
-      if (!controller.signal.aborted) {
-        setAIError(
-          reason instanceof Error ? reason.message : "AI 拆解失败，请重试。",
-        );
-      }
-    } finally {
-      if (aiControllerRef.current === controller) {
-        aiControllerRef.current = null;
-        setAILoading(false);
-      }
-    }
-  };
-
-  const aiAssistantProps = {
-    review: aiReview,
-    syncBlocks,
-    reviewRequired:
-      interview.status === "draft" || interview.status === "pending",
-    configured: aiConfigured,
-    loading: aiLoading,
-    error: aiError,
-    onStart: () => void startAIReview(),
-    onOpenSettings: onOpenAISettings,
-    onUpdate: (candidateId: string, input: UpdateAIReviewCandidateInput) =>
-      onUpdateAIReviewCandidate(interview.id, candidateId, input),
-    onResolve: (
-      candidateId: string,
-      decision: "accepted" | "ignored",
-      connectToSuggested = false,
-    ) =>
-      onResolveAIReviewCandidate(
-        interview.id,
-        candidateId,
-        decision,
-        connectToSuggested,
-      ),
-    onAcceptAll: () => onAcceptAllAIReviewCandidates(interview.id),
-  };
   const pendingAICount =
-    aiReview?.candidates.filter((candidate) => candidate.decision === "pending")
-      .length ?? 0;
+    aiReview?.candidates.filter(isAIReviewCandidatePending).length ?? 0;
+  const aiReviewStatus = extractionActive(interview.extractionTask)
+    ? extractionLabel(interview.extractionTask)
+    : pendingAICount
+      ? `${pendingAICount} 条待审核`
+      : aiReview
+        ? "审核已完成"
+        : "尚未解析";
 
   const keepQuestionVisibleInNav = (questionId: string) => {
     const panel = questionNavPanelRef.current;
@@ -1534,7 +2111,7 @@ function InterviewDetail({
             {interview.company}
             {interview.round ? ` · ${interview.round}` : ""}
           </span>
-          <StatusBadge status={interview.status} />
+          <StatusBadge status={interview.status} task={interview.extractionTask} />
         </div>
 
         <header className="interview-detail-hero">
@@ -1566,10 +2143,16 @@ function InterviewDetail({
               .filter(Boolean)
               .join(" · ")}
           </p>
-          <button className="button primary" onClick={onAddQuestion}>
-            <Plus size={15} aria-hidden="true" />
-            添加原子问答
-          </button>
+          <div className="interview-edit-actions">
+            <button className="button secondary" onClick={() => setEditingInfo(true)}>
+              <Pencil size={15} aria-hidden="true" />
+              编辑基础信息
+            </button>
+            <button className="button primary" onClick={onAddQuestion}>
+              <Plus size={15} aria-hidden="true" />
+              添加原子问答
+            </button>
+          </div>
         </header>
 
         {interview.sample ? (
@@ -1580,13 +2163,13 @@ function InterviewDetail({
         ) : null}
 
         <button
-          className="interview-ai-drawer-trigger"
+          className="interview-ai-review-trigger"
           type="button"
-          onClick={() => setMobileAIOpen(true)}
+          onClick={onOpenAIReview}
         >
           <Sparkles size={15} aria-hidden="true" />
-          <span>AI 助理</span>
-          {pendingAICount ? <strong>{pendingAICount} 条待审核</strong> : null}
+          <span>AI 解析审核</span>
+          <strong>{aiReviewStatus}</strong>
           <ChevronRight size={14} aria-hidden="true" />
         </button>
 
@@ -1645,6 +2228,10 @@ function InterviewDetail({
                     <header>
                       <span>Q{String(index + 1).padStart(2, "0")}</span>
                       <h3>{question.title}</h3>
+                      <button className="text-button question-edit-trigger" onClick={() => setEditingQuestionId(question.id)} aria-label={`编辑原子问答：${question.title}`}>
+                        <Pencil size={14} aria-hidden="true" />
+                        编辑
+                      </button>
                     </header>
                     <div className="tag-row">
                       {question.tags.map((tag) => (
@@ -1668,10 +2255,18 @@ function InterviewDetail({
                     ) : null}
                     <div className="interview-question-answer">
                       <span>当次回答</span>
-                      <p className={question.answer ? "" : "muted"}>
-                        {question.answer || "尚未填写当次回答。"}
-                      </p>
+                      <AnswerOutline
+                        answer={question.answer}
+                        emptyText="尚未填写当次回答。"
+                        className="compact"
+                      />
                     </div>
+                    {question.notes ? (
+                      <div className="interview-question-answer">
+                        <span>笔记</span>
+                        <p>{question.notes}</p>
+                      </div>
+                    ) : null}
                     {!syncBlock ? (
                       <button
                         className="text-button"
@@ -1693,9 +2288,31 @@ function InterviewDetail({
         </section>
       </div>
 
+      {editingInfo ? (
+        <Modal title="编辑面试基础信息" onClose={() => setEditingInfo(false)}>
+          <InterviewForm initialValue={interview} onCancel={() => setEditingInfo(false)} onSubmit={(input) => {
+            onUpdateInterview(interview.id, input);
+            setEditingInfo(false);
+          }} />
+        </Modal>
+      ) : null}
+      {editingQuestion ? (
+        <Modal title="编辑原子问答" description="保存后，原子问答模块与所有引用位置同步更新。" onClose={() => setEditingQuestionId(null)}>
+          <QuestionForm initialValue={editingQuestion} onCancel={() => setEditingQuestionId(null)} onSubmit={(input) => {
+            onUpdateQuestion(editingQuestion.id, input);
+            setEditingQuestionId(null);
+          }} />
+        </Modal>
+      ) : null}
       <aside className="interview-detail-aside" aria-label="记录关系摘要">
-        <div className="interview-ai-desktop">
-          <InterviewAIAssistant {...aiAssistantProps} />
+        <div className="interview-ai-desktop-entry">
+          <p className="eyebrow">AI 解析审核</p>
+          <h2>{aiReviewStatus}</h2>
+          <p>在独立页面中依次审核原子问答和同步块关联。</p>
+          <button className="button primary" type="button" onClick={onOpenAIReview}>
+            <Sparkles size={14} aria-hidden="true" />
+            进入审核页
+          </button>
         </div>
 
         <section>
@@ -1767,35 +2384,6 @@ function InterviewDetail({
           </dl>
         </section>
       </aside>
-      {mobileAIOpen
-        ? createPortal(
-            <div className="interview-ai-drawer-layer">
-              <button
-                className="interview-ai-drawer-backdrop"
-                type="button"
-                aria-label="关闭 AI 助理"
-                onClick={() => setMobileAIOpen(false)}
-              />
-              <aside
-                className="interview-ai-drawer"
-                role="dialog"
-                aria-modal="true"
-                aria-label="AI 助理"
-              >
-                <button
-                  className="icon-button interview-ai-drawer-close"
-                  type="button"
-                  title="关闭 AI 助理"
-                  onClick={() => setMobileAIOpen(false)}
-                >
-                  <X size={18} aria-hidden="true" />
-                </button>
-                <InterviewAIAssistant {...aiAssistantProps} />
-              </aside>
-            </div>,
-            document.body,
-          )
-        : null}
     </div>
   );
 }
@@ -1918,7 +2506,7 @@ function QuestionsPage({
                 aria-label="搜索原子问答"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索问题、答案、笔记或标签"
+                placeholder="搜索问题、回答、笔记或标签"
               />
             </label>
             <div className="question-filter-fields">
@@ -1990,7 +2578,7 @@ function QuestionsPage({
                 <span className="question-list-content">
                   <strong>{question.title}</strong>
                   <span className="question-list-answer">
-                    {question.answer || "尚未填写答案。"}
+                    {question.answer || "尚未填写回答。"}
                   </span>
                   <span className="question-list-meta">
                     {interview
@@ -2174,23 +2762,18 @@ function QuestionDetail({
 
       <div className={`question-document${isEditing ? " editing" : ""}`}>
         <section className="question-document-section">
-          <p className="eyebrow">Answer</p>
-          <h2>答案</h2>
+          <p className="eyebrow">Response</p>
+          <h2>回答</h2>
           {isEditing ? (
-            <textarea
-              className="question-content-editor"
-              aria-label="答案"
+            <AnswerEditor
               value={answer}
-              onChange={(event) => setAnswer(event.target.value)}
-              placeholder="写下这道问题的答案。"
-              rows={9}
+              onChange={setAnswer}
+              className="question-content-editor"
+              placeholder="写下这道问题的回答。"
+              minRows={9}
             />
           ) : (
-            <div
-              className={question.answer ? "answer-body" : "answer-body muted"}
-            >
-              {question.answer || "尚未填写答案。"}
-            </div>
+            <AnswerOutline answer={question.answer} className="answer-body" />
           )}
         </section>
 
@@ -2312,6 +2895,7 @@ function SyncPage({
   onCreate,
   onOpenQuestion,
   onOpenResume,
+  onUpdate,
 }: {
   syncBlocks: SyncBlock[];
   questions: AtomicQuestion[];
@@ -2321,14 +2905,28 @@ function SyncPage({
   onCreate: () => void;
   onOpenQuestion: (id: string) => void;
   onOpenResume: (id: string) => void;
+  onUpdate: (id: string, input: UpdateSyncBlockInput) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const sortedSyncBlocks = useMemo(
     () => sortSyncBlocksByLinkedQuestionCount(syncBlocks),
     [syncBlocks],
   );
+  const favoriteSyncBlocks = useMemo(
+    () => getFavoriteSyncBlocks({ syncBlocks }),
+    [syncBlocks],
+  );
+  const scopedSyncBlocks = showFavoritesOnly
+    ? favoriteSyncBlocks
+    : sortedSyncBlocks;
+  const visibleSyncBlocks = useMemo(
+    () => searchSyncBlocks(scopedSyncBlocks, query),
+    [query, scopedSyncBlocks],
+  );
   const selected =
-    sortedSyncBlocks.find((item) => item.id === selectedId) ??
-    sortedSyncBlocks[0];
+    visibleSyncBlocks.find((item) => item.id === selectedId) ??
+    visibleSyncBlocks[0];
   const linkedExperiences = selected
     ? resumeExperiences.filter(
         (experience) =>
@@ -2340,11 +2938,11 @@ function SyncPage({
     : [];
 
   return (
-    <div className="page">
+    <div className="page sync-page">
       <PageHeader
         eyebrow="Synchronized knowledge"
         title="同步块"
-        description="牵一发而动全身"
+        description="牵一发而动全身，盘活你的知识资产"
         action={
           <button className="button primary" onClick={onCreate}>
             <Plus size={16} aria-hidden="true" />
@@ -2352,30 +2950,147 @@ function SyncPage({
           </button>
         }
       />
-      {syncBlocks.length && selected ? (
+      {syncBlocks.length ? (
+        <div className="toolbar sync-search-toolbar">
+          <label className="search-field">
+            <Search size={16} aria-hidden="true" />
+            <input
+              aria-label="搜索同步块"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={
+                showFavoritesOnly
+                  ? "搜索收藏同步块"
+                  : "搜索标题、稳定回答或复习笔记"
+              }
+            />
+          </label>
+          <div className="segmented sync-scope-filter" aria-label="同步块范围">
+            <button
+              className={showFavoritesOnly ? "" : "active"}
+              type="button"
+              aria-pressed={!showFavoritesOnly}
+              onClick={() => setShowFavoritesOnly(false)}
+            >
+              全部
+            </button>
+            <button
+              className={showFavoritesOnly ? "active" : ""}
+              type="button"
+              aria-pressed={showFavoritesOnly}
+              onClick={() => setShowFavoritesOnly(true)}
+            >
+              <Star
+                size={14}
+                fill={showFavoritesOnly ? "currentColor" : "none"}
+                aria-hidden="true"
+              />
+              收藏
+            </button>
+          </div>
+          <span className="sync-search-summary" aria-live="polite">
+            显示 {visibleSyncBlocks.length} / {scopedSyncBlocks.length} 个
+          </span>
+        </div>
+      ) : null}
+      {visibleSyncBlocks.length && selected ? (
         <div className="sync-layout">
           <nav className="sync-list" aria-label="同步块列表">
-            {sortedSyncBlocks.map((syncBlock) => (
-              <button
-                className={syncBlock.id === selected.id ? "active" : ""}
+            {visibleSyncBlocks.map((syncBlock) => (
+              <div
+                className={`sync-list-item${
+                  syncBlock.id === selected.id ? " active" : ""
+                }`}
                 key={syncBlock.id}
-                onClick={() => onSelect(syncBlock.id)}
               >
-                <strong>{syncBlock.title}</strong>
-                <small>{syncBlock.linkedQuestionIds.length} 个关联问答</small>
-              </button>
+                <button
+                  className="sync-list-select"
+                  type="button"
+                  onClick={() => onSelect(syncBlock.id)}
+                >
+                  <strong>{syncBlock.title}</strong>
+                  <small>{syncBlock.linkedQuestionIds.length} 个关联问答</small>
+                </button>
+                <button
+                  className={`sync-favorite-button${
+                    syncBlock.favorite ? " active" : ""
+                  }`}
+                  type="button"
+                  aria-label={
+                    syncBlock.favorite
+                      ? `取消收藏「${syncBlock.title}」`
+                      : `收藏「${syncBlock.title}」`
+                  }
+                  aria-pressed={syncBlock.favorite}
+                  title={syncBlock.favorite ? "取消收藏" : "收藏"}
+                  onClick={() =>
+                    onUpdate(syncBlock.id, {
+                      favorite: !syncBlock.favorite,
+                    })
+                  }
+                >
+                  <Star
+                    size={17}
+                    fill={syncBlock.favorite ? "currentColor" : "none"}
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
             ))}
           </nav>
-          <article className="sync-detail">
-            <p className="eyebrow">Stable answer</p>
-            <h2>{selected.title}</h2>
-            <div className="sync-body">{selected.body}</div>
-            {selected.reviewNotes ? (
-              <aside className="review-note">
-                <strong>复习笔记</strong>
-                <p>{selected.reviewNotes}</p>
-              </aside>
-            ) : null}
+          <article className="sync-detail" key={selected.id}>
+            <header className="sync-detail-header">
+              <div>
+                <p className="eyebrow">Stable answer</p>
+                <h2>
+                  <InlineText
+                    value={selected.title}
+                    label="同步块标题"
+                    placeholder="填写同步块标题"
+                    required
+                    onSave={(title) => onUpdate(selected.id, { title })}
+                  />
+                </h2>
+              </div>
+              <button
+                className={`sync-detail-favorite${
+                  selected.favorite ? " active" : ""
+                }`}
+                type="button"
+                aria-label={selected.favorite ? "取消收藏同步块" : "收藏同步块"}
+                aria-pressed={selected.favorite}
+                title={selected.favorite ? "取消收藏" : "收藏"}
+                onClick={() =>
+                  onUpdate(selected.id, { favorite: !selected.favorite })
+                }
+              >
+                <Star
+                  size={22}
+                  fill={selected.favorite ? "currentColor" : "none"}
+                  aria-hidden="true"
+                />
+              </button>
+            </header>
+            <div className="sync-body">
+              <InlineAnswer
+                value={selected.body}
+                label="稳定回答"
+                placeholder="点击填写稳定回答"
+                onSave={(body) => onUpdate(selected.id, { body })}
+              />
+            </div>
+            <aside className="review-note">
+              <strong>复习笔记</strong>
+              <p>
+                <InlineText
+                  value={selected.reviewNotes}
+                  label="复习笔记"
+                  placeholder="点击填写复习笔记"
+                  multiline
+                  onSave={(reviewNotes) => onUpdate(selected.id, { reviewNotes })}
+                />
+              </p>
+            </aside>
             <div className="linked-section">
               <h3>关联原子问答 · {selected.linkedQuestionIds.length}</h3>
               {selected.linkedQuestionIds.map((id) => {
@@ -2413,6 +3128,38 @@ function SyncPage({
             </div>
           </article>
         </div>
+      ) : syncBlocks.length ? (
+        <EmptyState
+          title={
+            showFavoritesOnly && !favoriteSyncBlocks.length
+              ? "还没有收藏的同步块"
+              : showFavoritesOnly
+                ? "没有匹配的收藏同步块"
+                : "没有匹配的同步块"
+          }
+          description={
+            showFavoritesOnly && !favoriteSyncBlocks.length
+              ? "点亮同步块右侧的星标，即可在这里集中查看。"
+              : "调整关键词，或清除搜索查看当前范围内的同步块。"
+          }
+          action={
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => {
+                if (showFavoritesOnly && !favoriteSyncBlocks.length) {
+                  setShowFavoritesOnly(false);
+                } else {
+                  setQuery("");
+                }
+              }}
+            >
+              {showFavoritesOnly && !favoriteSyncBlocks.length
+                ? "查看全部同步块"
+                : "清除搜索"}
+            </button>
+          }
+        />
       ) : (
         <EmptyState
           title="还没有同步块"
@@ -2438,6 +3185,12 @@ function SettingsPage({
   onSetAIApiKey,
   onClearAIApiKey,
   onTestAI,
+  transcriptionConfig,
+  transcriptionConfigured,
+  transcriptionLoading,
+  transcriptionError,
+  onSaveTranscriptionConfig,
+  onClearTranscriptionConfig,
   onLoadDemo,
   onRestore,
   onExport,
@@ -2452,6 +3205,14 @@ function SettingsPage({
   onSetAIApiKey: (credentialId: AIProviderCredentialId, value: string) => void;
   onClearAIApiKey: (credentialId: AIProviderCredentialId) => void;
   onTestAI: (config: AIProviderConfig, apiKey: string) => Promise<void>;
+  transcriptionConfig: TranscriptionServiceConfig;
+  transcriptionConfigured: boolean;
+  transcriptionLoading: boolean;
+  transcriptionError: string | null;
+  onSaveTranscriptionConfig: (
+    config: TranscriptionServiceConfig,
+  ) => Promise<void>;
+  onClearTranscriptionConfig: () => Promise<void>;
   onLoadDemo: () => void;
   onRestore: (workspace: Workspace) => Promise<void>;
   onExport: () => void;
@@ -2462,6 +3223,9 @@ function SettingsPage({
   >(null);
   const aiExpanded = expandedGroup === "ai";
   const dataExpanded = expandedGroup === "data";
+  const storageScope = isTauri()
+    ? "桌面应用专属存储"
+    : "当前网页地址专属存储";
 
   return (
     <div className="page settings-page">
@@ -2475,7 +3239,7 @@ function SettingsPage({
           <Database size={20} aria-hidden="true" />
           <span>
             <strong>本地工作区</strong>
-            <small>IndexedDB · 当前浏览器配置</small>
+            <small>IndexedDB · {storageScope}</small>
           </span>
         </div>
         <CheckCircle2 className="success-icon" size={20} aria-label="可用" />
@@ -2494,7 +3258,7 @@ function SettingsPage({
               <Sparkles size={20} aria-hidden="true" />
               <span>
                 <strong>AI 服务</strong>
-                <small>配置模型提供方、API Key、服务地址与连接状态。</small>
+                <small>配置文本模型与语音转写提供方、密钥和连接状态。</small>
               </span>
             </div>
             <ChevronDown size={19} aria-hidden="true" />
@@ -2508,12 +3272,19 @@ function SettingsPage({
               config={aiConfig}
               loading={aiLoading}
               error={aiError}
-              embedded
               onSave={onSaveAIConfig}
               getApiKey={getAIApiKey}
               onSetApiKey={onSetAIApiKey}
               onClearApiKey={onClearAIApiKey}
               onTest={onTestAI}
+            />
+            <TranscriptionSettingsPanel
+              config={transcriptionConfig}
+              configured={transcriptionConfigured}
+              loading={transcriptionLoading}
+              error={transcriptionError}
+              onSave={onSaveTranscriptionConfig}
+              onClear={onClearTranscriptionConfig}
             />
           </div>
         </section>
@@ -2579,7 +3350,7 @@ function SettingsPage({
                 <Trash2 size={20} aria-hidden="true" />
                 <span>
                   <strong>清空本地工作区</strong>
-                  <small>此操作会删除当前浏览器中的全部千面数据。</small>
+                  <small>此操作会永久删除{storageScope}中的全部数据。</small>
                 </span>
               </div>
               <button
@@ -2597,6 +3368,95 @@ function SettingsPage({
   );
 }
 
+function ClearWorkspaceDialog({
+  workspace,
+  onClose,
+  onConfirm,
+}: {
+  workspace: Workspace;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [verification, setVerification] = useState("");
+  const [clearing, setClearing] = useState(false);
+  const [clearError, setClearError] = useState("");
+  const canConfirm = verification.trim() === "清空";
+  const storageScope = isTauri() ? "桌面应用" : "当前网页地址";
+
+  return (
+    <Modal
+      title="清空本地工作区？"
+      eyebrow="高风险操作"
+      description="数据清空后无法撤销。建议先下载 JSON 备份。"
+      className="workspace-clear-modal"
+      onClose={clearing ? () => undefined : onClose}
+    >
+      <form
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (!canConfirm || clearing) return;
+          setClearing(true);
+          setClearError("");
+          try {
+            await onConfirm();
+          } catch (reason) {
+            setClearError(
+              reason instanceof Error ? reason.message : "清空失败，请重试。",
+            );
+            setClearing(false);
+          }
+        }}
+      >
+        <div className="workspace-clear-summary">
+          <Trash2 size={20} aria-hidden="true" />
+          <p>
+            将删除 {workspace.interviews.length} 条面试记录、
+            {workspace.questions.length} 个原子问答、
+            {workspace.syncBlocks.length} 个同步块和
+            {workspace.resumeExperiences.length} 条简历经历，以及相关审核与复习数据。
+          </p>
+        </div>
+        <p className="workspace-clear-scope">
+          本次操作仅作用于{storageScope}的本地工作区。
+        </p>
+        <label htmlFor="workspace-clear-verification">
+          输入“清空”以确认
+          <input
+            id="workspace-clear-verification"
+            value={verification}
+            onChange={(event) => setVerification(event.target.value)}
+            autoComplete="off"
+            autoFocus
+            disabled={clearing}
+          />
+        </label>
+        {clearError ? (
+          <p className="inline-error" role="alert">
+            {clearError}
+          </p>
+        ) : null}
+        <footer className="form-actions workspace-clear-actions">
+          <button
+            className="button quiet"
+            type="button"
+            disabled={clearing}
+            onClick={onClose}
+          >
+            取消
+          </button>
+          <button
+            className="button danger"
+            type="submit"
+            disabled={!canConfirm || clearing}
+          >
+            {clearing ? "正在清空…" : "确认永久清空"}
+          </button>
+        </footer>
+      </form>
+    </Modal>
+  );
+}
+
 export default function App() {
   const {
     workspace,
@@ -2609,16 +3469,23 @@ export default function App() {
     endMockInterview,
     applyMockInterviewAnalysis,
     updateInterview,
+    createInterviewOrganization,
+    deleteInterviewOrganization,
+    deleteInterview,
     createQuestion,
     saveAIReview,
+    saveExtractionTask,
+    markExtractionRead,
     completeAIReview,
     updateAIReviewCandidate,
-    resolveAIReviewCandidate,
+    resolveAIReviewQuestion,
+    resolveAIReviewSync,
     acceptAllAIReviewCandidates,
     createStandaloneQuestion,
     updateQuestion,
     linkQuestionToSyncBlock,
     createSyncBlock,
+    updateSyncBlock,
     createResumeExperience,
     updateResumeExperience,
     deleteResumeExperience,
@@ -2628,11 +3495,18 @@ export default function App() {
     exportWorkspace,
   } = useWorkspace();
   const aiSettings = useAISettings();
+  const transcriptionSettings = useTranscriptionSettings();
   const aiClient = useMemo(() => createOpenAICompatibleClient(), []);
+  const extraction = useExtractionQueue(
+    aiClient, aiSettings.config, aiSettings.apiKey, workspace.syncBlocks, saveExtractionTask,
+  );
   const [view, setView] = useState<View>("overview");
   const [selectedInterviewId, setSelectedInterviewId] = useState<string | null>(
     null,
   );
+  const [reviewReturnView, setReviewReturnView] = useState<
+    "overview" | "interviews"
+  >("overview");
   const [selectedSyncId, setSelectedSyncId] = useState<string | null>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(
     null,
@@ -2641,8 +3515,12 @@ export default function App() {
   const [selectedMockInterviewId, setSelectedMockInterviewId] = useState<
     string | null
   >(null);
+  const [mockLobbyView, setMockLobbyView] = useState<"home" | "setup">("home");
   const [questionReturnView, setQuestionReturnView] =
     useState<View>("questions");
+  const [createMode, setCreateMode] = useState<CreateMode>("choose");
+  const [createInitialRaw, setCreateInitialRaw] = useState("");
+  const [createInitialSource, setCreateInitialSource] = useState<string | undefined>();
   const [dialog, setDialog] = useState<Dialog>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () =>
@@ -2652,7 +3530,15 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileKnowledgeMenuOpen, setMobileKnowledgeMenuOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
   const [dailyQuestionId, setDailyQuestionId] = useState<string | null>(null);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+
+  useEffect(() => () => {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+  }, []);
 
   useLayoutEffect(() => {
     if (
@@ -2677,8 +3563,8 @@ export default function App() {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [mobileKnowledgeMenuOpen]);
 
-  const recommendations = useMemo(
-    () => getRecommendedSyncBlocks(workspace),
+  const favoriteSyncBlocks = useMemo(
+    () => getFavoriteSyncBlocks(workspace),
     [workspace],
   );
   const selectedInterview = workspace.interviews.find(
@@ -2691,6 +3577,7 @@ export default function App() {
     workspace.questions.find((item) => item.id === dailyQuestionId) ?? null;
   const hasData =
     workspace.interviews.length +
+      workspace.interviewOrganizations.length +
       workspace.questions.length +
       workspace.syncBlocks.length +
       workspace.resumeExperiences.length +
@@ -2698,12 +3585,29 @@ export default function App() {
     0;
 
   const notify = (message: string) => {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
     setToast(message);
-    window.setTimeout(() => setToast(null), 2400);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 3_000);
   };
 
-  const navigate = (next: View) => {
+  const navigate = (
+    next: View,
+    options?: { mockLobbyView?: "home" | "setup" },
+  ) => {
     setView(next);
+    setMockLobbyView(
+      next === "mock" ? options?.mockLobbyView ?? "home" : "home",
+    );
+    if (next !== "create") {
+      setCreateMode("choose");
+      setCreateInitialRaw("");
+      setCreateInitialSource(undefined);
+    }
     setSelectedInterviewId(null);
     setSelectedSyncId(null);
     setSelectedQuestionId(null);
@@ -2713,6 +3617,40 @@ export default function App() {
     setMobileKnowledgeMenuOpen(false);
   };
 
+  const openCreate = () => {
+    navigate("create");
+    setCreateMode("choose");
+  };
+
+  const openImport = (initialRaw = "", initialSource?: string) => {
+    navigate("create");
+    setCreateInitialRaw(initialRaw);
+    setCreateInitialSource(initialSource);
+    setCreateMode("import");
+  };
+
+  const openRecorder = () => {
+    navigate("create");
+    setCreateMode("record");
+  };
+
+  useEffect(() => {
+    const openNewPage = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        openCreate();
+      } else if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "k"
+      ) {
+        event.preventDefault();
+        navigate("search");
+      }
+    };
+    window.addEventListener("keydown", openNewPage);
+    return () => window.removeEventListener("keydown", openNewPage);
+  });
+
   const openKnowledgeView = (next: View) => {
     navigate(next);
   };
@@ -2721,6 +3659,29 @@ export default function App() {
     setView("interviews");
     setSelectedInterviewId(id);
     setSelectedQuestionId(null);
+  };
+
+  const openAIReview = (id: string) => {
+    setReviewReturnView(view === "overview" ? "overview" : "interviews");
+    setView("review");
+    setSelectedInterviewId(id);
+    setSelectedSyncId(null);
+    setSelectedQuestionId(null);
+    setSelectedResumeId(null);
+    setMobileMenuOpen(false);
+    setMobileKnowledgeMenuOpen(false);
+  };
+
+  const closeAIReview = () => {
+    if (reviewReturnView === "overview") {
+      navigate("overview");
+      return;
+    }
+    if (selectedInterviewId) {
+      openInterview(selectedInterviewId);
+      return;
+    }
+    navigate("interviews");
   };
 
   const openMockInterview = (id: string) => {
@@ -2773,9 +3734,9 @@ export default function App() {
     notify("完整备份已导出");
   };
 
-  const clearData = () => {
-    if (!window.confirm("确定清空全部本地数据吗？此操作无法撤销。")) return;
-    clear();
+  const clearData = async () => {
+    extraction.reset();
+    await clear();
     navigate("overview");
     notify("本地工作区已清空");
   };
@@ -2801,12 +3762,18 @@ export default function App() {
   }
 
   return (
-    <div className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+    <div
+      className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
+        view === "create" && createMode !== "choose"
+          ? " create-detail-open"
+          : ""
+      }`}
+    >
       <aside className={`sidebar ${mobileMenuOpen ? "mobile-open" : ""}`}>
-        <div className="brand" aria-label="千面，interview atlas">
+        <div className="brand" aria-label="见字·如面，Interview Atlas">
           <BrandMark />
           <span className="brand-name">
-            <strong>千面</strong>
+            <strong>见字·如面</strong>
             <small>interview atlas</small>
           </span>
           <button
@@ -2832,16 +3799,13 @@ export default function App() {
           </button>
         </div>
         <button
-          className="button accent import-button"
-          onClick={() => {
-            setDialog({ kind: "interview" });
-            setMobileMenuOpen(false);
-          }}
-          aria-label="导入面经"
-          title={sidebarCollapsed ? "导入面经" : undefined}
+          className={`button accent import-button${view === "create" ? " active" : ""}`}
+          onClick={openCreate}
+          aria-label="新建"
+          title={sidebarCollapsed ? "新建" : undefined}
         >
           <Plus size={16} aria-hidden="true" />
-          <span>导入面经</span>
+          <span>新建</span>
           <kbd>⌘N</kbd>
         </button>
         <nav>
@@ -2894,7 +3858,7 @@ export default function App() {
         />
       ) : null}
 
-      <main>
+      <main className={view === "sync" ? "sync-workspace" : undefined}>
         <header className="mobile-header">
           <button
             className="icon-button"
@@ -2906,23 +3870,23 @@ export default function App() {
           >
             <Menu size={20} />
           </button>
-          <span className="mobile-brand" aria-label="千面，interview atlas">
+          <span className="mobile-brand" aria-label="见字·如面，Interview Atlas">
             <BrandMark compact />
             <span>
-              <strong>千面</strong>
+              <strong>见字·如面</strong>
               <small>interview atlas</small>
             </span>
           </span>
           <button
-            className={`icon-button mobile-settings${
-              view === "settings" ? " active" : ""
+            className={`icon-button mobile-search${
+              view === "search" ? " active" : ""
             }`}
             type="button"
-            onClick={() => navigate("settings")}
-            aria-label="打开设置"
-            title="设置"
+            onClick={() => navigate("search")}
+            aria-label="打开全局搜索"
+            title="全局搜索"
           >
-            <Settings size={19} aria-hidden="true" />
+            <Search size={19} aria-hidden="true" />
           </button>
         </header>
 
@@ -2939,15 +3903,132 @@ export default function App() {
             interviews={workspace.interviews}
             aiReviews={workspace.aiReviews}
             syncBlocks={workspace.syncBlocks}
-            recommendations={recommendations}
+            favoriteSyncBlocks={favoriteSyncBlocks}
             onNavigate={navigate}
             onOpenInterview={openInterview}
             onOpenQuestion={openQuestion}
             onOpenSync={openSync}
-            onCreateInterview={() => setDialog({ kind: "interview" })}
-            onUpdateAIReviewCandidate={updateAIReviewCandidate}
-            onResolveAIReviewCandidate={resolveAIReviewCandidate}
-            onAcceptAllAIReviewCandidates={acceptAllAIReviewCandidates}
+            onCreateInterview={openCreate}
+            onOpenMockInterviewRoom={() =>
+              navigate("mock", { mockLobbyView: "setup" })
+            }
+            onOpenAIReview={openAIReview}
+          />
+        ) : null}
+
+        {view === "review" && selectedInterview ? (
+          <AIReviewPage
+            key={selectedInterview.id}
+            interview={selectedInterview}
+            review={workspace.aiReviews.find(
+              (review) => review.interviewId === selectedInterview.id,
+            )}
+            syncBlocks={workspace.syncBlocks}
+            configured={aiSettings.configured}
+            onBack={closeAIReview}
+            onOpenInterview={() => openInterview(selectedInterview.id)}
+            onStartExtraction={() => {
+              extraction.start(selectedInterview);
+            }}
+            onCancelExtraction={() => extraction.cancel(selectedInterview.id)}
+            onOpenSettings={() => navigate("settings")}
+            onUpdate={(candidateId, input) =>
+              updateAIReviewCandidate(selectedInterview.id, candidateId, input)
+            }
+            onResolveQuestion={(candidateId, decision) =>
+              resolveAIReviewQuestion(
+                selectedInterview.id,
+                candidateId,
+                decision,
+              )
+            }
+            onResolveSync={(candidateId, decision) =>
+              resolveAIReviewSync(selectedInterview.id, candidateId, decision)
+            }
+            onAcceptAll={() =>
+              acceptAllAIReviewCandidates(selectedInterview.id)
+            }
+          />
+        ) : null}
+
+        {view === "search" ? (
+          <GlobalSearchPage
+            workspace={workspace}
+            query={globalSearchQuery}
+            onQueryChange={setGlobalSearchQuery}
+            onOpenInterview={openInterview}
+            onOpenQuestion={openQuestion}
+            onOpenSync={openSync}
+            onOpenResume={openResume}
+            onOpenAssetPage={(type) =>
+              navigate(
+                type === "interview"
+                  ? "interviews"
+                  : type === "question"
+                    ? "questions"
+                    : type === "sync"
+                      ? "sync"
+                      : "resume",
+              )
+            }
+          />
+        ) : null}
+
+        {view === "create" && createMode === "choose" ? (
+          <CreatePage onImport={() => openImport()} onRecord={openRecorder} />
+        ) : null}
+
+        {view === "create" && createMode === "import" ? (
+          <InterviewImportPage
+            key={`${createInitialSource ?? "manual"}-${createInitialRaw ? "with-raw" : "empty"}`}
+            config={aiSettings.config}
+            configured={aiSettings.configured}
+            initialRaw={createInitialRaw}
+            initialSource={createInitialSource}
+            interviews={workspace.interviews}
+            reviews={workspace.aiReviews}
+            onStartExtraction={extraction.start}
+            onCancelExtraction={extraction.cancel}
+            syncBlocks={workspace.syncBlocks}
+            onCreateDraft={createInterview}
+            onUpdateDraft={updateInterview}
+            onSaveReview={saveAIReview}
+            onClose={(savedDraftId) => {
+              setCreateMode("choose");
+              setCreateInitialRaw("");
+              setCreateInitialSource(undefined);
+              if (savedDraftId) {
+                notify("面经已保存，可在主页或面试记录查看处理状态");
+              }
+            }}
+            onOpenSettings={(savedDraftId) => {
+              navigate("settings");
+              if (savedDraftId) notify("原文已保存，可配置 AI 后继续审核");
+            }}
+            onComplete={(interviewId, candidates) => {
+              completeAIReview(interviewId, candidates);
+              markExtractionRead(interviewId);
+              openInterview(interviewId);
+              notify(
+                `已审核并保存 ${
+                  candidates.filter((candidate) => candidate.selected !== false)
+                    .length
+                } 个原子问答`,
+              );
+            }}
+          />
+        ) : null}
+
+        {view === "create" && createMode === "record" ? (
+          <InterviewRecorder
+            credentials={transcriptionSettings.credentials}
+            transcriptionConfigured={transcriptionSettings.configured}
+            transcriptionLoading={transcriptionSettings.loading}
+            onBack={() => setCreateMode("choose")}
+            onOpenSettings={() => navigate("settings")}
+            onUseTranscript={(transcript) =>
+              openImport(transcript, "讯飞双端录音")
+            }
           />
         ) : null}
 
@@ -2955,6 +4036,7 @@ export default function App() {
           <MockInterviewPage
             workspace={workspace}
             focusedId={selectedMockInterviewId}
+            initialLobbyView={mockLobbyView}
             configured={aiSettings.configured}
             config={aiSettings.config}
             apiKey={aiSettings.apiKey}
@@ -2972,10 +4054,20 @@ export default function App() {
         {view === "interviews" && !selectedInterview ? (
           <InterviewsPage
             interviews={workspace.interviews}
+            organizations={workspace.interviewOrganizations}
             questions={workspace.questions}
             aiReviews={workspace.aiReviews}
             onOpen={openInterview}
-            onCreate={() => setDialog({ kind: "interview" })}
+            onCreateOrganization={createInterviewOrganization}
+            onDeleteOrganization={(id) => {
+              deleteInterviewOrganization(id);
+              notify("整理已删除");
+            }}
+            onDelete={async (id) => {
+              extraction.cancel(id);
+              await deleteInterview(id);
+              notify("面试记录及所属原子问答已永久删除");
+            }}
           />
         ) : null}
 
@@ -2989,10 +4081,6 @@ export default function App() {
             aiReview={workspace.aiReviews.find(
               (review) => review.interviewId === selectedInterview.id,
             )}
-            aiClient={aiClient}
-            aiConfig={aiSettings.config}
-            aiApiKey={aiSettings.apiKey}
-            aiConfigured={aiSettings.configured}
             onBack={() => setSelectedInterviewId(null)}
             onAddQuestion={() =>
               setDialog({ kind: "question", interviewId: selectedInterview.id })
@@ -3002,12 +4090,16 @@ export default function App() {
             onCreateSync={(questionId) =>
               setDialog({ kind: "sync", questionId })
             }
-            onSaveAIReview={saveAIReview}
-            onUpdateAIReviewCandidate={updateAIReviewCandidate}
-            onResolveAIReviewCandidate={resolveAIReviewCandidate}
-            onAcceptAllAIReviewCandidates={acceptAllAIReviewCandidates}
-            onOpenAISettings={() => navigate("settings")}
+            onOpenAIReview={() => openAIReview(selectedInterview.id)}
             onOpenMockInterview={openMockInterview}
+            onUpdateInterview={(id, input) => {
+              updateInterview(id, input);
+              notify("面试基础信息已更新");
+            }}
+            onUpdateQuestion={(id, input) => {
+              updateQuestion(id, input);
+              notify("原子问答已同步更新");
+            }}
           />
         ) : null}
 
@@ -3033,7 +4125,7 @@ export default function App() {
                 : questionReturnView === "resume"
                   ? "返回简历经历"
                   : questionReturnView === "overview"
-                    ? "返回概览"
+                    ? "返回主页"
                     : "返回原子问答"
             }
             onBack={closeQuestion}
@@ -3057,6 +4149,7 @@ export default function App() {
             onCreate={() => setDialog({ kind: "sync" })}
             onOpenQuestion={openQuestion}
             onOpenResume={openResume}
+            onUpdate={updateSyncBlock}
           />
         ) : null}
 
@@ -3106,6 +4199,12 @@ export default function App() {
             onTestAI={(config, apiKey) =>
               aiClient.testConnection(config, apiKey)
             }
+            transcriptionConfig={transcriptionSettings.config}
+            transcriptionConfigured={transcriptionSettings.configured}
+            transcriptionLoading={transcriptionSettings.loading}
+            transcriptionError={transcriptionSettings.error}
+            onSaveTranscriptionConfig={transcriptionSettings.saveConfig}
+            onClearTranscriptionConfig={transcriptionSettings.clearConfig}
             onLoadDemo={() => {
               if (
                 hasData &&
@@ -3113,17 +4212,19 @@ export default function App() {
               ) {
                 return;
               }
+              extraction.reset();
               loadDemo();
               navigate("overview");
               notify("示例工作区已加载");
             }}
             onRestore={async (nextWorkspace) => {
+              extraction.reset();
               await restoreWorkspace(nextWorkspace);
               navigate("overview");
               notify("备份已导入并替换当前工作区");
             }}
             onExport={exportData}
-            onClear={clearData}
+            onClear={() => setDialog({ kind: "clear-workspace" })}
           />
         ) : null}
       </main>
@@ -3139,7 +4240,9 @@ export default function App() {
 
       <nav
         className={`bottom-nav${mobileKnowledgeMenuOpen ? " menu-open" : ""}${
-          mobileMenuOpen ? " nav-hidden" : ""
+          mobileMenuOpen || (view === "create" && createMode !== "choose")
+            ? " nav-hidden"
+            : ""
         }`}
         aria-label="移动端主导航"
       >
@@ -3149,7 +4252,7 @@ export default function App() {
           aria-current={view === "overview" ? "page" : undefined}
         >
           <Home size={19} aria-hidden="true" />
-          <span>概览</span>
+          <span>主页</span>
         </button>
         <button
           className={`bottom-mock ${view === "mock" ? "active" : ""}`}
@@ -3160,18 +4263,15 @@ export default function App() {
           <span>模拟</span>
         </button>
         <button
-          className="bottom-create"
-          onClick={() => {
-            setMobileKnowledgeMenuOpen(false);
-            setDialog({ kind: "interview" });
-          }}
-          aria-label="导入面经"
-          title="导入面经"
+          className={`bottom-create${view === "create" ? " active" : ""}`}
+          onClick={openCreate}
+          aria-label="新建"
+          title="新建"
         >
           <span className="bottom-create-icon">
             <Plus size={23} aria-hidden="true" />
           </span>
-          <span className="bottom-create-label">导入</span>
+          <span className="bottom-create-label">新建</span>
         </button>
         <div className="bottom-knowledge">
           <button
@@ -3228,42 +4328,6 @@ export default function App() {
         </div>
       </nav>
 
-      {dialog?.kind === "interview" ? (
-        <InterviewImportDialog
-          client={aiClient}
-          config={aiSettings.config}
-          configured={aiSettings.configured}
-          apiKey={aiSettings.apiKey}
-          syncBlocks={workspace.syncBlocks}
-          onCreateDraft={createInterview}
-          onUpdateDraft={updateInterview}
-          onSaveReview={saveAIReview}
-          onClose={(savedDraftId) => {
-            setDialog(null);
-            if (savedDraftId) {
-              openInterview(savedDraftId);
-              notify("面试已加入待审核");
-            }
-          }}
-          onOpenSettings={(savedDraftId) => {
-            setDialog(null);
-            navigate("settings");
-            if (savedDraftId) notify("原文已保存，可配置 AI 后继续审核");
-          }}
-          onComplete={(interviewId, candidates) => {
-            completeAIReview(interviewId, candidates);
-            setDialog(null);
-            openInterview(interviewId);
-            notify(
-              `已审核并保存 ${
-                candidates.filter((candidate) => candidate.selected !== false)
-                  .length
-              } 个原子问答`,
-            );
-          }}
-        />
-      ) : null}
-
       {dialog?.kind === "question" ? (
         <Modal
           title="添加原子问答"
@@ -3301,6 +4365,7 @@ export default function App() {
 
       {dialog?.kind === "sync" ? (
         <Modal
+          className="sync-block-modal"
           title={dialog.questionId ? "关联到同步块" : "创建同步块"}
           description={
             dialog.questionId
@@ -3332,6 +4397,36 @@ export default function App() {
         </Modal>
       ) : null}
 
+      {dialog?.kind === "clear-workspace" ? (
+        <ClearWorkspaceDialog
+          workspace={workspace}
+          onClose={() => setDialog(null)}
+          onConfirm={async () => {
+            await clearData();
+            setDialog(null);
+          }}
+        />
+      ) : null}
+
+      <div className="extraction-notifications" aria-live="polite" aria-label="AI 处理通知">
+        {workspace.interviews.filter((item) => item.extractionTask?.unread).map((interview) => (
+          <div className="extraction-notification" key={interview.extractionTask!.id}>
+            <div>
+              <strong>{interview.extractionTask!.status === "completed" ? "AI 解析已完成" : "AI 解析未完成"}</strong>
+              <p>{interview.company}</p>
+              <button className="text-button" onClick={() => {
+                setDialog(null);
+                markExtractionRead(interview.id);
+                openAIReview(interview.id);
+              }}>{interview.extractionTask!.status === "completed" ? "查看并审核" : "查看并重试"}</button>
+            </div>
+            <button className="icon-button" aria-label={`关闭 ${interview.company} 的处理通知`} onClick={() => markExtractionRead(interview.id)}>
+              <X size={16} aria-hidden="true" />
+            </button>
+          </div>
+        ))}
+      </div>
+
       {toast ? (
         <div className="toast" role="status">
           <CheckCircle2 size={15} aria-hidden="true" />
@@ -3343,6 +4438,7 @@ export default function App() {
         <button
           className="demo-shortcut"
           onClick={() => {
+            extraction.reset();
             loadDemo();
             notify("已加载明确标记的示例内容");
           }}

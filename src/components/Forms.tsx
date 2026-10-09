@@ -1,7 +1,9 @@
-import { Check, Link2, Plus } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { Check, Link2, Plus, Search } from "lucide-react";
+import { useMemo, useState, type FormEvent } from "react";
+import { AnswerEditor } from "./AnswerEditor";
 import type {
   AtomicQuestion,
+  CreateInterviewInput,
   CreateQuestionInput,
   CreateSyncBlockInput,
   ResumeExperience,
@@ -9,14 +11,16 @@ import type {
 } from "../domain/types";
 
 interface QuestionFormProps {
+  initialValue?: CreateQuestionInput;
   onSubmit: (input: CreateQuestionInput) => void;
   onCancel: () => void;
 }
 
-export function QuestionForm({ onSubmit, onCancel }: QuestionFormProps) {
-  const [title, setTitle] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [notes, setNotes] = useState("");
+export function QuestionForm({ initialValue, onSubmit, onCancel }: QuestionFormProps) {
+  const [title, setTitle] = useState(initialValue?.title ?? "");
+  const [answer, setAnswer] = useState(initialValue?.answer ?? "");
+  const [notes, setNotes] = useState(initialValue?.notes ?? "");
+  const [tags, setTags] = useState(initialValue?.tags.join("，") ?? "");
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -25,7 +29,7 @@ export function QuestionForm({ onSubmit, onCancel }: QuestionFormProps) {
       title,
       answer,
       notes,
-      tags: [],
+      tags: [...new Set(tags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))],
     });
   };
 
@@ -41,32 +45,76 @@ export function QuestionForm({ onSubmit, onCancel }: QuestionFormProps) {
           required
         />
       </label>
-      <label>
-        <span>答案</span>
-        <textarea
+      <div className="form-field">
+        <span>回答</span>
+        <AnswerEditor
           value={answer}
-          onChange={(event) => setAnswer(event.target.value)}
+          onChange={setAnswer}
           placeholder="可以先留空，之后再完善。"
-          rows={7}
+          minRows={7}
         />
-      </label>
+      </div>
       <label>
         <span>笔记</span>
         <textarea
+          aria-label="笔记"
           value={notes}
           onChange={(event) => setNotes(event.target.value)}
           placeholder="记录补充思路、待查资料或下次需要改进的地方。"
           rows={4}
         />
       </label>
+      <label>
+        <span>标签</span>
+        <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="多个标签用逗号分隔" />
+      </label>
       <footer className="form-actions">
         <button className="button quiet" type="button" onClick={onCancel}>
           取消
         </button>
         <button className="button primary" type="submit">
-          <Plus size={15} aria-hidden="true" />
-          添加原子问答
+          {initialValue ? <Check size={15} aria-hidden="true" /> : <Plus size={15} aria-hidden="true" />}
+          {initialValue ? "保存原子问答" : "添加原子问答"}
         </button>
+      </footer>
+    </form>
+  );
+}
+
+export function InterviewForm({
+  initialValue,
+  onSubmit,
+  onCancel,
+}: {
+  initialValue: CreateInterviewInput;
+  onSubmit: (input: CreateInterviewInput) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initialValue);
+  return (
+    <form onSubmit={(event) => {
+      event.preventDefault();
+      onSubmit({ ...value, company: value.company.trim() || "未命名面试" });
+    }}>
+      <div className="interview-metadata-fields">
+        {([
+          ["company", "公司名"], ["role", "岗位名"], ["round", "面试轮次"],
+          ["date", "面试日期"], ["source", "来源"],
+        ] as const).map(([field, label], index) => (
+          <label key={field}>
+            <span>{label}</span>
+            <input
+              autoFocus={index === 0}
+              type={field === "date" ? "date" : "text"}
+              value={value[field]}
+              onChange={(event) => setValue({ ...value, [field]: event.target.value })}
+            />
+          </label>
+        ))}
+      </div>
+      <footer className="form-actions">
+        <button className="button quiet" type="button" onClick={onCancel}>取消</button>
+        <button className="button primary" type="submit">保存基础信息</button>
       </footer>
     </form>
   );
@@ -104,8 +152,34 @@ export function SyncBlockForm({
   const [selected, setSelected] = useState<string[]>(
     initialQuestionId ? [initialQuestionId] : [],
   );
+  const [questionQuery, setQuestionQuery] = useState("");
   const [selectedResumeExperienceIds, setSelectedResumeExperienceIds] =
     useState<string[]>([]);
+  const visibleQuestions = useMemo(() => {
+    const normalizedQuery = questionQuery
+      .trim()
+      .toLocaleLowerCase("zh-CN");
+
+    return [...questions]
+      .sort(
+        (left, right) =>
+          right.updatedAt.localeCompare(left.updatedAt) ||
+          right.createdAt.localeCompare(left.createdAt),
+      )
+      .filter((question) =>
+        normalizedQuery
+          ? [
+              question.title,
+              question.answer,
+              question.notes,
+              question.tags.join(" "),
+            ]
+              .join(" ")
+              .toLocaleLowerCase("zh-CN")
+              .includes(normalizedQuery)
+          : true,
+      );
+  }, [questionQuery, questions]);
 
   const toggleQuestion = (id: string) => {
     setSelected((current) =>
@@ -223,16 +297,16 @@ export function SyncBlockForm({
                 required
               />
             </label>
-            <label>
+            <div className="form-field">
               <span>稳定回答</span>
-              <textarea
+              <AnswerEditor
                 value={body}
-                onChange={(event) => setBody(event.target.value)}
+                onChange={setBody}
+                label="稳定回答"
                 placeholder="写下跨面试可复用、仍能持续修订的回答。"
-                rows={8}
-                required
+                minRows={8}
               />
-            </label>
+            </div>
             <label>
               <span>复习笔记</span>
               <textarea
@@ -242,32 +316,49 @@ export function SyncBlockForm({
                 rows={3}
               />
             </label>
-            <fieldset className="question-picker">
+            <fieldset className="question-picker question-association-picker">
               <legend>关联原子问答 · 已选 {selected.length}</legend>
               {questions.length ? (
-                questions.map((question) => {
-                  const checked = selected.includes(question.id);
-                  return (
-                    <label className="question-option" key={question.id}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleQuestion(question.id)}
-                      />
-                      <span className="check-box" aria-hidden="true">
-                        {checked ? <Check size={13} /> : null}
-                      </span>
-                      <span>
-                        <strong>{question.title}</strong>
-                        <small>
-                          {question.linkedSyncBlockId
-                            ? "已连接其他同步块，保存后将移动"
-                            : "尚未连接同步块"}
-                        </small>
-                      </span>
-                    </label>
-                  );
-                })
+                <>
+                  <label className="question-picker-search">
+                    <Search size={15} aria-hidden="true" />
+                    <input
+                      aria-label="搜索可关联的原子问答"
+                      value={questionQuery}
+                      onChange={(event) => setQuestionQuery(event.target.value)}
+                      placeholder="搜索问题、回答或标签"
+                    />
+                  </label>
+                  <div className="question-picker-options">
+                    {visibleQuestions.length ? (
+                      visibleQuestions.map((question) => {
+                        const checked = selected.includes(question.id);
+                        return (
+                          <label className="question-option" key={question.id}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleQuestion(question.id)}
+                            />
+                            <span className="check-box" aria-hidden="true">
+                              {checked ? <Check size={13} /> : null}
+                            </span>
+                            <span>
+                              <strong>{question.title}</strong>
+                              <small>
+                                {question.linkedSyncBlockId
+                                  ? "已连接其他同步块，保存后将移动"
+                                  : "尚未连接同步块"}
+                              </small>
+                            </span>
+                          </label>
+                        );
+                      })
+                    ) : (
+                      <p className="empty-inline">没有匹配的原子问答。</p>
+                    )}
+                  </div>
+                </>
               ) : (
                 <p className="empty-inline">先创建原子问答，再建立同步块。</p>
               )}

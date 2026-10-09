@@ -2,6 +2,7 @@ import type {
   AtomicQuestion,
   Interview,
   InterviewAIReview,
+  InterviewOrganization,
   MockInterviewSession,
   Preference,
   ResumeExperience,
@@ -10,13 +11,15 @@ import type {
   Workspace,
   WorkspaceExport,
 } from "../domain/types";
+import { formatAnswer, migrateLegacyAnswer } from "../domain/answerFormat";
 import { emptyWorkspace } from "../domain/workspace";
 
 const DATABASE_NAME = "interview-atlas";
-const DATABASE_VERSION = 6;
+const DATABASE_VERSION = 10;
 
 const stores = {
   interviews: "interviews",
+  interviewOrganizations: "interviewOrganizations",
   questions: "questions",
   syncBlocks: "syncBlocks",
   resumeExperiences: "resumeExperiences",
@@ -28,6 +31,7 @@ const stores = {
 
 const dataStoreNames = [
   stores.interviews,
+  stores.interviewOrganizations,
   stores.questions,
   stores.syncBlocks,
   stores.resumeExperiences,
@@ -48,10 +52,20 @@ export interface WorkspaceRepository {
 function normalizeQuestion(question: AtomicQuestion): AtomicQuestion {
   const normalized = {
     ...question,
+    answer: formatAnswer(question.answer),
     notes: typeof question.notes === "string" ? question.notes : "",
   } as AtomicQuestion & { originalQuestion?: unknown };
   delete normalized.originalQuestion;
   return normalized;
+}
+
+function normalizeSyncBlock(syncBlock: SyncBlock): SyncBlock {
+  return {
+    ...syncBlock,
+    body: formatAnswer(syncBlock.body),
+    favorite:
+      typeof syncBlock.favorite === "boolean" ? syncBlock.favorite : false,
+  };
 }
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
@@ -86,7 +100,7 @@ function openDatabase(): Promise<IDBDatabase> {
       if (!database.objectStoreNames.contains(stores.preferences)) {
         database.createObjectStore(stores.preferences, { keyPath: "key" });
       }
-      if (event.oldVersion < 5) {
+      if (event.oldVersion < 8) {
         const cursorRequest = request.transaction
           ?.objectStore(stores.questions)
           .openCursor();
@@ -100,7 +114,74 @@ function openDatabase(): Promise<IDBDatabase> {
               delete question.originalQuestion;
             }
             if (typeof question.notes !== "string") question.notes = "";
+            if (typeof question.answer === "string") {
+              question.answer = migrateLegacyAnswer(question.answer);
+            }
             cursor.update(question);
+            cursor.continue();
+          };
+        }
+
+      }
+      if (event.oldVersion < 9) {
+        const syncBlockCursorRequest = request.transaction
+          ?.objectStore(stores.syncBlocks)
+          .openCursor();
+        if (syncBlockCursorRequest) {
+          syncBlockCursorRequest.onsuccess = () => {
+            const cursor = syncBlockCursorRequest.result;
+            if (!cursor) return;
+
+            const syncBlock = cursor.value as Record<string, unknown>;
+            if (typeof syncBlock.body === "string") {
+              syncBlock.body = migrateLegacyAnswer(syncBlock.body);
+            }
+            cursor.update(syncBlock);
+            cursor.continue();
+          };
+        }
+      }
+      if (event.oldVersion < 10) {
+        const reviewCursorRequest = request.transaction
+          ?.objectStore(stores.aiReviews)
+          .openCursor();
+        if (reviewCursorRequest) {
+          reviewCursorRequest.onsuccess = () => {
+            const cursor = reviewCursorRequest.result;
+            if (!cursor) return;
+
+            const review = cursor.value as Record<string, unknown>;
+            const candidates = Array.isArray(review.candidates)
+              ? review.candidates
+              : [];
+            review.candidates = candidates.map((value) => {
+              const candidate = value as Record<string, unknown>;
+              const suggested = typeof candidate.suggestedSyncBlockId === "string";
+              const legacyDecision =
+                candidate.decision === "accepted" ||
+                candidate.decision === "ignored"
+                  ? candidate.decision
+                  : "pending";
+              const next: Record<string, unknown> = {
+                ...candidate,
+                ...(event.oldVersion < 8 && typeof candidate.answer === "string"
+                  ? { answer: migrateLegacyAnswer(candidate.answer) }
+                  : {}),
+                questionDecision: legacyDecision,
+                syncDecision: !suggested
+                  ? "not_suggested"
+                  : legacyDecision === "pending"
+                    ? "pending"
+                    : legacyDecision === "accepted" &&
+                        candidate.connectToSuggested === true
+                      ? "accepted"
+                      : "ignored",
+              };
+              delete next.decision;
+              delete next.connectToSuggested;
+              return next;
+            });
+            cursor.update(review);
             cursor.continue();
           };
         }
@@ -132,6 +213,7 @@ async function loadWorkspace(): Promise<Workspace> {
   try {
     const [
       interviews,
+      interviewOrganizations,
       questions,
       syncBlocks,
       resumeExperiences,
@@ -140,6 +222,10 @@ async function loadWorkspace(): Promise<Workspace> {
       mockInterviews,
     ] = await Promise.all([
       readAll<Interview>(transaction, stores.interviews),
+      readAll<InterviewOrganization>(
+        transaction,
+        stores.interviewOrganizations,
+      ),
       readAll<AtomicQuestion>(transaction, stores.questions),
       readAll<SyncBlock>(transaction, stores.syncBlocks),
       readAll<ResumeExperience>(transaction, stores.resumeExperiences),
@@ -150,8 +236,9 @@ async function loadWorkspace(): Promise<Workspace> {
     await completed;
     return {
       interviews,
+      interviewOrganizations,
       questions: questions.map(normalizeQuestion),
-      syncBlocks,
+      syncBlocks: syncBlocks.map(normalizeSyncBlock),
       resumeExperiences,
       aiReviews,
       reviewEvents,
@@ -181,10 +268,19 @@ async function saveWorkspace(workspace: Workspace): Promise<void> {
     replaceStore(transaction, stores.interviews, workspace.interviews);
     replaceStore(
       transaction,
+      stores.interviewOrganizations,
+      workspace.interviewOrganizations,
+    );
+    replaceStore(
+      transaction,
       stores.questions,
       workspace.questions.map(normalizeQuestion),
     );
-    replaceStore(transaction, stores.syncBlocks, workspace.syncBlocks);
+    replaceStore(
+      transaction,
+      stores.syncBlocks,
+      workspace.syncBlocks.map(normalizeSyncBlock),
+    );
     replaceStore(
       transaction,
       stores.resumeExperiences,
@@ -245,9 +341,10 @@ export const indexedDbRepository: WorkspaceRepository = {
   getPreference,
   setPreference,
   export: (workspace) => ({
-    formatVersion: 5,
+    formatVersion: 10,
     exportedAt: new Date().toISOString(),
     ...workspace,
     questions: workspace.questions.map(normalizeQuestion),
+    syncBlocks: workspace.syncBlocks.map(normalizeSyncBlock),
   }),
 };

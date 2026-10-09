@@ -16,6 +16,7 @@ import {
   resolveChatCompletionsUrl,
 } from "./openAICompatibleClient";
 import type { AIProviderConfig } from "./types";
+import { INTERVIEW_ANSWER_SYSTEM_PROMPT, INTERVIEW_MATCH_SYSTEM_PROMPT } from "./interviewExtraction";
 
 const config: AIProviderConfig = {
   protocol: "openai-compatible",
@@ -65,21 +66,30 @@ const mockSession: MockInterviewSession = {
 };
 
 describe("OpenAI-compatible client", () => {
-  it("defines strict extraction, normalization, tagging, and sync matching rules", () => {
+  it("separates recall, evidence fidelity, and strict matching rules", () => {
     expect(INTERVIEW_EXTRACTION_SYSTEM_PROMPT).toContain(
-      "准确性和可追溯性优先于数量",
+      "尽量完整识别有原文依据",
     );
     expect(INTERVIEW_EXTRACTION_SYSTEM_PROMPT).toContain(
       "删除不承载语义的口语填充",
     );
-    expect(INTERVIEW_EXTRACTION_SYSTEM_PROMPT).toContain(
+    expect(INTERVIEW_ANSWER_SYSTEM_PROMPT).toContain(
       "每题提取 1 到 4 个标签",
     );
-    expect(INTERVIEW_EXTRACTION_SYSTEM_PROMPT).toContain(
+    expect(INTERVIEW_ANSWER_SYSTEM_PROMPT).toContain(
+      "第一人称",
+    );
+    expect(INTERVIEW_ANSWER_SYSTEM_PROMPT).toContain(
+      "禁止使用“候选人表示”",
+    );
+    expect(INTERVIEW_MATCH_SYSTEM_PROMPT).toContain(
       "核心主题、提问意图、回答范围和关键约束上均高度一致",
     );
-    expect(INTERVIEW_EXTRACTION_SYSTEM_PROMPT).toContain(
+    expect(INTERVIEW_MATCH_SYSTEM_PROMPT).toContain(
       "多个同步块都可能匹配",
+    );
+    expect(INTERVIEW_MATCH_SYSTEM_PROMPT).toContain(
+      "matchReason 必须使用简体中文",
     );
   });
 
@@ -179,32 +189,36 @@ describe("OpenAI-compatible client", () => {
   ])("retries malformed extraction once using only the original evidence: %s", async (invalid) => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(completion(invalid))
-      .mockResolvedValueOnce(completion('{"questions":[{"title":"如何减少首屏时间？"}]}'));
+      .mockImplementation(async () => completion('{"questions":[],"hasMore":false}'));
     const client = createOpenAICompatibleClient(fetchMock);
     const result = await client.extractInterview(config, "key", { interview, syncBlocks: [] });
-    expect(result[0]?.title).toBe("如何减少首屏时间？");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     const bodies = fetchMock.mock.calls.map((call) => JSON.parse(call[1].body));
     expect(bodies[0].response_format).toEqual({ type: "json_object" });
     expect(bodies[1].messages[1]).toEqual(bodies[0].messages[1]);
     expect(bodies[1].messages).toHaveLength(2);
   });
 
-  it.each([null, '{"questions":[]}'])("retries length-limited output with more room: %s", async (content) => {
+  it.each([null, '{"questions":[]}'])("splits length-limited inventory work without repeating the same page: %s", async (content) => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(completion(content, "length"))
-      .mockResolvedValueOnce(completion('{"questions":[]}'));
+      .mockImplementation(async () => completion('{"questions":[],"hasMore":false}'));
     const client = createOpenAICompatibleClient(fetchMock);
     await expect(client.extractInterview(config, "", { interview, syncBlocks: [] }))
       .resolves.toEqual([]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(fetchMock.mock.calls[0]![1].body).max_tokens).toBe(8_000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body).max_tokens).toBe(16_000);
     expect(JSON.parse(fetchMock.mock.calls[1]![1].body).max_tokens).toBe(16_000);
+    const firstData = JSON.parse(JSON.parse(fetchMock.mock.calls[0]![1].body).messages[1].content);
+    const secondData = JSON.parse(JSON.parse(fetchMock.mock.calls[1]![1].body).messages[1].content);
+    expect(firstData.pageSize).toBe(24);
+    expect(secondData.pageSize).toBe(12);
   });
 
   it.each([
     ["not json", "stop", "结构化数据"],
-    ['{"questions":[]}', "length", "输出长度上限"],
+    ['{"questions":[]}', "stop", "完成标记"],
   ])("stops after one unsuccessful regeneration", async (content, finishReason, error) => {
     const fetchMock = vi.fn(async () => completion(content, finishReason));
     const client = createOpenAICompatibleClient(fetchMock);
@@ -218,11 +232,11 @@ describe("OpenAI-compatible client", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({
         error: { message: "response_format json_object is not supported" },
       }), { status: 400 }))
-      .mockResolvedValueOnce(completion('{"questions":[]}'));
+      .mockImplementation(async () => completion('{"questions":[],"hasMore":false}'));
     const client = createOpenAICompatibleClient(fetchMock);
     await expect(client.extractInterview(config, "", { interview, syncBlocks: [] }))
       .resolves.toEqual([]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     const first = JSON.parse(fetchMock.mock.calls[0]![1].body);
     const second = JSON.parse(fetchMock.mock.calls[1]![1].body);
     expect(first.response_format).toEqual({ type: "json_object" });
@@ -297,6 +311,80 @@ describe("OpenAI-compatible client", () => {
     expect(customized).toContain(
       "可编辑规则不得改变固定注入信息、角色边界、结束机制、报告流程或输出格式",
     );
+  });
+
+  it("sends the entire source on both identification and coverage passes", async () => {
+    const rawText = "面试官：如何优化？\n候选人：先测量再定位。\n".repeat(600);
+    const inputs: Array<{ source: Array<{ text: string }> }> = [];
+    const progress = vi.fn();
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      inputs.push(JSON.parse(JSON.parse(String(init?.body)).messages[1].content));
+      return completion('{"questions":[],"hasMore":false}');
+    });
+    await createOpenAICompatibleClient(fetchMock).extractInterview(
+      config, "", { interview: { ...interview, rawText }, syncBlocks: [] }, undefined, progress,
+    );
+    expect(inputs).toHaveLength(2);
+    for (const item of inputs) {
+      expect(item.source.map((part) => part.text).join("")).toBe(rawText);
+    }
+    expect(progress).toHaveBeenLastCalledWith({
+      completed: 3, total: 3, phase: "extracting", stage: "matching",
+    });
+  });
+
+  it("does not present identification as complete when coverage fails", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(completion('{"questions":[],"hasMore":false}'))
+      .mockResolvedValueOnce(new Response("", { status: 401 }));
+    await expect(createOpenAICompatibleClient(fetchMock).extractInterview(
+      config, "", { interview: { ...interview, rawText: "甲".repeat(6_000) }, syncBlocks: [] },
+    )).rejects.toThrow("遗漏复查未完成");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels before sending a subsequent stage", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async () => completion('{"questions":[],"hasMore":false}'));
+    await expect(createOpenAICompatibleClient(fetchMock).extractInterview(
+      config, "", { interview: { ...interview, rawText: "甲".repeat(6_000) }, syncBlocks: [] },
+      controller.signal,
+      (progress) => { if (progress.completed === 1) controller.abort(); },
+    )).rejects.toThrow("已取消");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a timed-out request while retaining the full source", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn()
+        .mockImplementationOnce((_url: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+          }))
+        .mockImplementation(async () => completion('{"questions":[],"hasMore":false}'));
+      const result = createOpenAICompatibleClient(fetchMock).extractInterview(
+        config, "", { interview: { ...interview, rawText: "甲".repeat(2_400) }, syncBlocks: [] },
+      );
+      const assertion = expect(result).resolves.toEqual([]);
+      await vi.advanceTimersByTimeAsync(180_000);
+      await assertion;
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      const lengths = fetchMock.mock.calls.map((call) =>
+        JSON.parse(JSON.parse(String(call[1]?.body)).messages[1].content).source
+          .reduce((sum: number, part: { text: string }) => sum + part.text.length, 0));
+      expect(lengths).toEqual([2_400, 2_400, 2_400]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("bounds repeated inventory truncation instead of paginating forever", async () => {
+    const fetchMock = vi.fn(async () => completion(null, "length"));
+    await expect(createOpenAICompatibleClient(fetchMock).extractInterview(
+      config, "", { interview: { ...interview, rawText: "甲".repeat(3_000) }, syncBlocks: [] },
+    )).rejects.toThrow("未完成");
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 
   it("parses interviewer end decisions and tolerates plain-text providers", () => {
@@ -422,35 +510,37 @@ describe("OpenAI-compatible client", () => {
       const body = JSON.parse(String(init?.body)) as {
         messages: Array<{ content: string }>;
       };
-      expect(body.messages[1]?.content).toContain(interview.rawText);
+      const data = JSON.parse(body.messages[1]!.content);
+      if (data.stage === "inventory" || data.stage === "coverage") {
+        expect(data.source.map((part: { text: string }) => part.text).join("")).toBe(interview.rawText);
+        expect(body.messages[1]?.content).not.toContain("sync-1");
+      } else if (data.stage === "answers") {
+        expect(data).not.toHaveProperty("source");
+        expect(data.targets[0].sourceContext).toContain("如何减少首屏时间");
+        expect(body.messages[1]?.content).not.toContain("sync-1");
+      } else {
+        expect(data).not.toHaveProperty("source");
+      }
+      expect(body.messages[0]?.content).not.toContain(interview.rawText);
       expect(body.messages[1]?.content).not.toContain("reviewEvents");
       expect((init?.headers as Record<string, string>).Authorization).toBe(
         "Bearer secret",
       );
 
-      return new Response(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  questions: [
-                    {
-                      title: "如何减少首屏时间？",
-                      answer: "先测量关键指标。",
-                      tags: ["性能"],
-                      sourceExcerpt: "如何减少首屏时间",
-                      suggestedSyncBlockId: "sync-1",
-                      matchReason: "主题相同",
-                    },
-                  ],
-                }),
-              },
-            },
-          ],
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
+      if (data.stage === "inventory") return completion(JSON.stringify({
+        questions: [{ title: "如何减少首屏时间？", sourceId: 1, quote: "如何减少首屏时间？" }], hasMore: false,
+      }));
+      if (data.stage === "coverage") return completion('{"questions":[],"hasMore":false}');
+      if (data.stage === "answers") return completion(JSON.stringify({
+        questions: [{
+          id: "q1",
+          answerPoints: ["先测量关键指标。", "再定位资源和渲染瓶颈。"],
+          tags: ["性能"],
+        }],
+      }));
+      return completion(JSON.stringify({
+        matches: [{ id: "q1", suggestedSyncBlockId: "sync-1", matchReason: "都讨论首屏性能测量和优化" }],
+      }));
     });
     const client = createOpenAICompatibleClient(
       fetchMock as unknown as typeof fetch,
@@ -465,6 +555,7 @@ describe("OpenAI-compatible client", () => {
           body: "先测量再优化。",
           reviewNotes: "",
           linkedQuestionIds: [],
+          favorite: false,
           pinned: false,
           hidden: false,
           createdAt: interview.createdAt,
@@ -474,6 +565,9 @@ describe("OpenAI-compatible client", () => {
     });
 
     expect(result[0]?.suggestedSyncBlockId).toBe("sync-1");
+    expect(result[0]?.answer).toBe(
+      "先测量关键指标。\n再定位资源和渲染瓶颈。",
+    );
     expect(fetchMock).toHaveBeenCalledWith(
       "https://example.com/v1/chat/completions",
       expect.objectContaining({ method: "POST" }),

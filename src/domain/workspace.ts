@@ -2,10 +2,12 @@ import type {
   AIReviewCandidate,
   AtomicQuestion,
   CreateInterviewInput,
+  CreateInterviewOrganizationInput,
   CreateQuestionInput,
   CreateResumeExperienceInput,
   CreateSyncBlockInput,
   Interview,
+  InterviewOrganization,
   MockInterviewFeedback,
   MockInterviewMessage,
   MockInterviewMessageRole,
@@ -16,11 +18,14 @@ import type {
   SaveAIReviewCandidateInput,
   SyncBlock,
   UpdateAIReviewCandidateInput,
+  UpdateSyncBlockInput,
   Workspace,
 } from "./types";
+import { formatAnswer } from "./answerFormat";
 
 export const emptyWorkspace = (): Workspace => ({
   interviews: [],
+  interviewOrganizations: [],
   questions: [],
   syncBlocks: [],
   resumeExperiences: [],
@@ -92,6 +97,59 @@ export function updateInterview(
   };
 }
 
+export function addInterviewOrganization(
+  workspace: Workspace,
+  input: CreateInterviewOrganizationInput,
+): { workspace: Workspace; organization: InterviewOrganization } {
+  const title = input.title.trim();
+  const interviewIds = new Set(workspace.interviews.map((item) => item.id));
+  const collections = input.collections
+    .map((collection) => ({
+      id: identifier(),
+      label: collection.label.trim(),
+      interviewIds: [
+        ...new Set(collection.interviewIds.filter((id) => interviewIds.has(id))),
+      ],
+    }))
+    .filter((collection) => collection.label && collection.interviewIds.length);
+
+  if (!title) throw new Error("整理名称不能为空");
+  if (!collections.length) throw new Error("至少需要一个包含面试记录的集合");
+
+  const now = timestamp();
+  const organization: InterviewOrganization = {
+    id: identifier(),
+    title,
+    mode: input.mode,
+    collections,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  return {
+    workspace: {
+      ...workspace,
+      interviewOrganizations: [
+        organization,
+        ...workspace.interviewOrganizations,
+      ],
+    },
+    organization,
+  };
+}
+
+export function deleteInterviewOrganization(
+  workspace: Workspace,
+  organizationId: string,
+): Workspace {
+  return {
+    ...workspace,
+    interviewOrganizations: workspace.interviewOrganizations.filter(
+      (item) => item.id !== organizationId,
+    ),
+  };
+}
+
 export function addQuestion(
   workspace: Workspace,
   interviewId: string,
@@ -106,7 +164,7 @@ export function addQuestion(
   const question: AtomicQuestion = {
     id: identifier(),
     title: input.title.trim(),
-    answer: input.answer.trim(),
+    answer: formatAnswer(input.answer),
     notes: input.notes?.trim() ?? "",
     tags: input.tags.map((tag) => tag.trim()).filter(Boolean),
     sourceInterviewIds: [interviewId],
@@ -131,6 +189,76 @@ export function addQuestion(
       questions: [...workspace.questions, question],
     },
     question,
+  };
+}
+
+export function getInterviewQuestionIds(
+  workspace: Pick<Workspace, "interviews" | "questions">,
+  interviewId: string,
+): string[] {
+  const interview = workspace.interviews.find((item) => item.id === interviewId);
+  return [...new Set([
+    ...(interview?.questionIds ?? []),
+    ...workspace.questions
+      .filter((question) => question.sourceInterviewIds.includes(interviewId))
+      .map((question) => question.id),
+  ])];
+}
+
+export function deleteInterview(workspace: Workspace, interviewId: string): Workspace {
+  if (!workspace.interviews.some((item) => item.id === interviewId)) {
+    throw new Error("面试记录不存在");
+  }
+  const deletedIds = new Set(getInterviewQuestionIds(workspace, interviewId));
+  const now = timestamp();
+  const cleanLinks = <T extends { linkedQuestionIds: string[]; updatedAt: string }>(item: T): T =>
+    item.linkedQuestionIds.some((id) => deletedIds.has(id))
+      ? { ...item, linkedQuestionIds: item.linkedQuestionIds.filter((id) => !deletedIds.has(id)), updatedAt: now }
+      : item;
+  return {
+    ...workspace,
+    interviews: workspace.interviews
+      .filter((item) => item.id !== interviewId)
+      .map((item) => item.questionIds.some((id) => deletedIds.has(id))
+        ? { ...item, questionIds: item.questionIds.filter((id) => !deletedIds.has(id)), updatedAt: now }
+        : item),
+    interviewOrganizations: workspace.interviewOrganizations.map((organization) => ({
+      ...organization,
+      collections: organization.collections
+        .map((collection) => ({
+          ...collection,
+          interviewIds: collection.interviewIds.filter((id) => id !== interviewId),
+        }))
+        .filter((collection) => collection.interviewIds.length),
+      updatedAt: organization.collections.some((collection) =>
+        collection.interviewIds.includes(interviewId))
+        ? now
+        : organization.updatedAt,
+    })),
+    questions: workspace.questions.filter((item) => !deletedIds.has(item.id)),
+    syncBlocks: workspace.syncBlocks.map(cleanLinks),
+    resumeExperiences: workspace.resumeExperiences.map(cleanLinks),
+    aiReviews: workspace.aiReviews
+      .filter((item) => item.interviewId !== interviewId)
+      .map((item) => item.candidates.some((candidate) => candidate.createdQuestionId && deletedIds.has(candidate.createdQuestionId))
+        ? {
+            ...item,
+            updatedAt: now,
+            candidates: item.candidates.map((candidate) =>
+              candidate.createdQuestionId && deletedIds.has(candidate.createdQuestionId)
+                ? { ...candidate, createdQuestionId: null }
+                : candidate),
+          }
+        : item),
+    mockInterviews: workspace.mockInterviews.map((item) =>
+      item.interviewId === interviewId || item.questionIds.some((id) => deletedIds.has(id))
+        ? {
+            ...item,
+            interviewId: item.interviewId === interviewId ? null : item.interviewId,
+            questionIds: item.questionIds.filter((id) => !deletedIds.has(id)),
+            updatedAt: now,
+          }
+        : item),
   };
 }
 
@@ -180,22 +308,25 @@ export function saveInterviewAIReview(
     (review) => review.interviewId === interviewId,
   );
   const syncBlockIds = new Set(workspace.syncBlocks.map((item) => item.id));
-  const candidates: AIReviewCandidate[] = inputs.map((input) => ({
-    id: identifier(),
-    title: input.title.trim(),
-    answer: input.answer.trim(),
-    tags: input.tags.map((tag) => tag.trim()).filter(Boolean),
-    sourceExcerpt: input.sourceExcerpt.trim(),
-    suggestedSyncBlockId:
+  const candidates: AIReviewCandidate[] = inputs.map((input) => {
+    const suggestedSyncBlockId =
       input.suggestedSyncBlockId &&
       syncBlockIds.has(input.suggestedSyncBlockId)
         ? input.suggestedSyncBlockId
-        : null,
-    matchReason: input.matchReason.trim(),
-    decision: "pending",
-    connectToSuggested: Boolean(input.connectToSuggested),
-    createdQuestionId: null,
-  }));
+        : null;
+    return {
+      id: identifier(),
+      title: input.title.trim(),
+      answer: formatAnswer(input.answer),
+      tags: input.tags.map((tag) => tag.trim()).filter(Boolean),
+      sourceExcerpt: input.sourceExcerpt.trim(),
+      suggestedSyncBlockId,
+      matchReason: input.matchReason.trim(),
+      questionDecision: "pending",
+      syncDecision: suggestedSyncBlockId ? "pending" : "not_suggested",
+      createdQuestionId: null,
+    };
+  });
   const review = {
     id: existing?.id ?? identifier(),
     interviewId,
@@ -230,7 +361,7 @@ export function updateAIReviewCandidate(
   );
   const candidate = review?.candidates.find((item) => item.id === candidateId);
   if (!review || !candidate) throw new Error("AI review candidate not found");
-  if (candidate.decision !== "pending") return workspace;
+  if (candidate.questionDecision !== "pending") return workspace;
 
   const now = timestamp();
   return {
@@ -248,20 +379,13 @@ export function updateAIReviewCandidate(
                       : { title: input.title.trim() }),
                     ...(input.answer === undefined
                       ? {}
-                      : { answer: input.answer.trim() }),
+                      : { answer: formatAnswer(input.answer) }),
                     ...(input.tags === undefined
                       ? {}
                       : {
                           tags: input.tags
                             .map((tag) => tag.trim())
                             .filter(Boolean),
-                        }),
-                    ...(input.connectToSuggested === undefined
-                      ? {}
-                      : {
-                          connectToSuggested:
-                            input.connectToSuggested &&
-                            Boolean(entry.suggestedSyncBlockId),
                         }),
                   }
                 : entry,
@@ -273,19 +397,56 @@ export function updateAIReviewCandidate(
   };
 }
 
-export function resolveAIReviewCandidate(
+export function isAIReviewCandidatePending(
+  candidate: AIReviewCandidate,
+): boolean {
+  return (
+    candidate.questionDecision === "pending" ||
+    candidate.syncDecision === "pending"
+  );
+}
+
+function applyAIReviewResolution(
+  workspace: Workspace,
+  interviewId: string,
+  reviewId: string,
+  candidates: AIReviewCandidate[],
+  now: string,
+): Workspace {
+  const completed = candidates.every(
+    (candidate) => !isAIReviewCandidatePending(candidate),
+  );
+  return {
+    ...workspace,
+    interviews: workspace.interviews.map((item) =>
+      item.id === interviewId
+        ? {
+            ...item,
+            status: completed ? "reviewed" : "pending",
+            updatedAt: now,
+          }
+        : item,
+    ),
+    aiReviews: workspace.aiReviews.map((item) =>
+      item.id === reviewId
+        ? { ...item, candidates, updatedAt: now }
+        : item,
+    ),
+  };
+}
+
+export function resolveAIReviewQuestion(
   workspace: Workspace,
   interviewId: string,
   candidateId: string,
   decision: "accepted" | "ignored",
-  connectToSuggested = false,
 ): Workspace {
   const review = workspace.aiReviews.find(
     (item) => item.interviewId === interviewId,
   );
   const candidate = review?.candidates.find((item) => item.id === candidateId);
   if (!review || !candidate) throw new Error("AI review candidate not found");
-  if (candidate.decision !== "pending") return workspace;
+  if (candidate.questionDecision !== "pending") return workspace;
 
   let next = workspace;
   let createdQuestionId: string | null = null;
@@ -297,19 +458,6 @@ export function resolveAIReviewCandidate(
     });
     next = result.workspace;
     createdQuestionId = result.question.id;
-    if (
-      connectToSuggested &&
-      candidate.suggestedSyncBlockId &&
-      next.syncBlocks.some(
-        (item) => item.id === candidate.suggestedSyncBlockId,
-      )
-    ) {
-      next = linkQuestionToSyncBlock(
-        next,
-        createdQuestionId,
-        candidate.suggestedSyncBlockId,
-      );
-    }
   }
 
   const now = timestamp();
@@ -317,40 +465,80 @@ export function resolveAIReviewCandidate(
     item.id === candidateId
       ? {
           ...item,
-          decision,
-          connectToSuggested:
-            decision === "accepted" &&
-            connectToSuggested &&
-            Boolean(item.suggestedSyncBlockId),
+          questionDecision: decision,
+          syncDecision:
+            decision === "ignored" && item.syncDecision === "pending"
+              ? "ignored"
+              : item.syncDecision,
           createdQuestionId,
         }
       : item,
   );
-  const completed = candidates.every((item) => item.decision !== "pending");
+  return applyAIReviewResolution(
+    next,
+    interviewId,
+    review.id,
+    candidates,
+    now,
+  );
+}
 
-  return {
-    ...next,
-    interviews: next.interviews.map((item) =>
-      item.id === interviewId
-        ? {
-            ...item,
-            status: completed ? "reviewed" : "pending",
-            updatedAt: now,
-          }
-        : item,
-    ),
-    aiReviews: next.aiReviews.map((item) =>
-      item.id === review.id
-        ? { ...item, candidates, updatedAt: now }
-        : item,
-    ),
-  };
+export function resolveAIReviewSync(
+  workspace: Workspace,
+  interviewId: string,
+  candidateId: string,
+  decision: "accepted" | "ignored",
+): Workspace {
+  const review = workspace.aiReviews.find(
+    (item) => item.interviewId === interviewId,
+  );
+  const candidate = review?.candidates.find((item) => item.id === candidateId);
+  if (!review || !candidate) throw new Error("AI review candidate not found");
+  if (candidate.syncDecision !== "pending") return workspace;
+  if (!candidate.suggestedSyncBlockId) {
+    throw new Error("该候选没有同步块关联建议");
+  }
+
+  let next = workspace;
+  if (decision === "accepted") {
+    if (
+      candidate.questionDecision !== "accepted" ||
+      !candidate.createdQuestionId
+    ) {
+      throw new Error("请先采纳原子问答，再采纳同步块关联建议");
+    }
+    if (
+      !workspace.syncBlocks.some(
+        (item) => item.id === candidate.suggestedSyncBlockId,
+      )
+    ) {
+      throw new Error("建议关联的同步块不存在");
+    }
+    next = linkQuestionToSyncBlock(
+      workspace,
+      candidate.createdQuestionId,
+      candidate.suggestedSyncBlockId,
+    );
+  }
+
+  const now = timestamp();
+  const candidates = review.candidates.map((item) =>
+    item.id === candidateId
+      ? { ...item, syncDecision: decision }
+      : item,
+  );
+  return applyAIReviewResolution(
+    next,
+    interviewId,
+    review.id,
+    candidates,
+    now,
+  );
 }
 
 export function resolveAllAIReviewCandidates(
   workspace: Workspace,
   interviewId: string,
-  connectSuggested = false,
 ): Workspace {
   const review = workspace.aiReviews.find(
     (item) => item.interviewId === interviewId,
@@ -359,13 +547,12 @@ export function resolveAllAIReviewCandidates(
 
   return review.candidates.reduce(
     (current, candidate) =>
-      candidate.decision === "pending"
-        ? resolveAIReviewCandidate(
+      candidate.questionDecision === "pending"
+        ? resolveAIReviewQuestion(
             current,
             interviewId,
             candidate.id,
             "accepted",
-            connectSuggested && candidate.connectToSuggested,
           )
         : current,
     workspace,
@@ -383,17 +570,32 @@ export function completeInterviewAIReview(
   );
   if (!review) return saved;
 
-  return review.candidates.reduce(
-    (current, candidate, index) =>
-      resolveAIReviewCandidate(
+  return review.candidates.reduce((current, candidate, index) => {
+    const input = inputs[index];
+    if (input?.selected === false) {
+      return resolveAIReviewQuestion(
         current,
         interviewId,
         candidate.id,
-        inputs[index]?.selected === false ? "ignored" : "accepted",
-        Boolean(inputs[index]?.connectToSuggested),
-      ),
-    saved,
-  );
+        "ignored",
+      );
+    }
+    let next = resolveAIReviewQuestion(
+      current,
+      interviewId,
+      candidate.id,
+      "accepted",
+    );
+    if (candidate.suggestedSyncBlockId) {
+      next = resolveAIReviewSync(
+        next,
+        interviewId,
+        candidate.id,
+        input?.connectToSuggested ? "accepted" : "ignored",
+      );
+    }
+    return next;
+  }, saved);
 }
 
 export function addMockInterview(
@@ -578,7 +780,7 @@ export function applyMockInterviewAnalysis(
     .map((input) => ({
       id: identifier(),
       title: input.title.trim(),
-      answer: input.answer.trim(),
+      answer: formatAnswer(input.answer),
       notes: "",
       tags: [
         ...new Set(input.tags.map((tag) => tag.trim()).filter(Boolean)),
@@ -626,7 +828,7 @@ export function addStandaloneQuestion(
   const question: AtomicQuestion = {
     id: identifier(),
     title: input.title.trim(),
-    answer: input.answer.trim(),
+    answer: formatAnswer(input.answer),
     notes: input.notes?.trim() ?? "",
     tags: input.tags.map((tag) => tag.trim()).filter(Boolean),
     sourceInterviewIds: [],
@@ -657,7 +859,7 @@ export function updateQuestion(
   const question: AtomicQuestion = {
     ...existing,
     title: input.title.trim(),
-    answer: input.answer.trim(),
+    answer: formatAnswer(input.answer),
     notes: input.notes?.trim() ?? "",
     tags: input.tags.map((tag) => tag.trim()).filter(Boolean),
     updatedAt: timestamp(),
@@ -767,9 +969,10 @@ export function addSyncBlock(
   const syncBlock: SyncBlock = {
     id: identifier(),
     title: input.title.trim(),
-    body: input.body.trim(),
+    body: formatAnswer(input.body),
     reviewNotes: input.reviewNotes.trim(),
     linkedQuestionIds: [...selectedQuestionIds],
+    favorite: false,
     pinned: false,
     hidden: false,
     createdAt: now,
@@ -813,6 +1016,37 @@ export function addSyncBlock(
   };
 }
 
+export function updateSyncBlock(
+  workspace: Workspace,
+  syncBlockId: string,
+  input: UpdateSyncBlockInput,
+): { workspace: Workspace; syncBlock: SyncBlock } {
+  const existing = workspace.syncBlocks.find((item) => item.id === syncBlockId);
+  if (!existing) throw new Error("同步块不存在。");
+  const title = input.title === undefined ? existing.title : input.title.trim();
+  if (!title) throw new Error("同步块标题不能为空。");
+  const syncBlock: SyncBlock = {
+    ...existing,
+    title,
+    body:
+      input.body === undefined ? existing.body : formatAnswer(input.body),
+    reviewNotes:
+      input.reviewNotes === undefined ? existing.reviewNotes : input.reviewNotes.trim(),
+    favorite:
+      input.favorite === undefined ? existing.favorite : input.favorite,
+    updatedAt: timestamp(),
+  };
+  return {
+    workspace: {
+      ...workspace,
+      syncBlocks: workspace.syncBlocks.map((item) =>
+        item.id === syncBlockId ? syncBlock : item,
+      ),
+    },
+    syncBlock,
+  };
+}
+
 export function sortSyncBlocksByLinkedQuestionCount(
   syncBlocks: SyncBlock[],
 ): SyncBlock[] {
@@ -822,29 +1056,27 @@ export function sortSyncBlocksByLinkedQuestionCount(
   );
 }
 
-export function getRecommendedSyncBlocks(
-  workspace: Workspace,
-  limit = 3,
+export function searchSyncBlocks(
+  syncBlocks: SyncBlock[],
+  query: string,
 ): SyncBlock[] {
-  const reviewedToday = new Set(
-    workspace.reviewEvents
-      .filter(
-        (event) =>
-          new Date(event.reviewedAt).toDateString() === new Date().toDateString(),
-      )
-      .map((event) => event.syncBlockId),
-  );
+  const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
+  if (!normalizedQuery) return syncBlocks;
 
-  return workspace.syncBlocks
-    .filter((item) => !item.hidden && !reviewedToday.has(item.id))
-    .sort((left, right) => {
-      if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
-      if (left.linkedQuestionIds.length !== right.linkedQuestionIds.length) {
-        return right.linkedQuestionIds.length - left.linkedQuestionIds.length;
-      }
-      return right.updatedAt.localeCompare(left.updatedAt);
-    })
-    .slice(0, limit);
+  return syncBlocks.filter((syncBlock) =>
+    [syncBlock.title, syncBlock.body, syncBlock.reviewNotes]
+      .join(" ")
+      .toLocaleLowerCase("zh-CN")
+      .includes(normalizedQuery),
+  );
+}
+
+export function getFavoriteSyncBlocks(
+  workspace: Pick<Workspace, "syncBlocks">,
+): SyncBlock[] {
+  return sortSyncBlocksByLinkedQuestionCount(
+    workspace.syncBlocks.filter((item) => item.favorite && !item.hidden),
+  );
 }
 
 export function getRandomQuestion(

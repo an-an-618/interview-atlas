@@ -1,5 +1,19 @@
 export type InterviewStatus = "draft" | "pending" | "reviewed" | "archived";
 
+export interface ExtractionTask {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
+  updatedAt: string;
+  progress?: {
+    completed: number;
+    total: number;
+    phase: "extracting" | "retrying" | "splitting";
+    stage?: "inventory" | "coverage" | "answers" | "matching";
+  };
+  error?: string;
+  unread?: boolean;
+}
+
 export interface Interview {
   id: string;
   company: string;
@@ -15,6 +29,30 @@ export interface Interview {
   sample?: boolean;
   simulated?: boolean;
   mockInterviewId?: string;
+  extractionTask?: ExtractionTask;
+}
+
+export type InterviewOrganizationMode =
+  | "company"
+  | "role"
+  | "round"
+  | "date"
+  | "tag"
+  | "custom";
+
+export interface InterviewCollection {
+  id: string;
+  label: string;
+  interviewIds: string[];
+}
+
+export interface InterviewOrganization {
+  id: string;
+  title: string;
+  mode: InterviewOrganizationMode;
+  collections: InterviewCollection[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AtomicQuestion {
@@ -36,6 +74,7 @@ export interface SyncBlock {
   body: string;
   reviewNotes: string;
   linkedQuestionIds: string[];
+  favorite: boolean;
   pinned: boolean;
   hidden: boolean;
   createdAt: string;
@@ -57,6 +96,11 @@ export interface ResumeExperience {
 }
 
 export type AIReviewDecision = "pending" | "accepted" | "ignored";
+export type AISyncReviewDecision =
+  | "not_suggested"
+  | "pending"
+  | "accepted"
+  | "ignored";
 
 export interface AIReviewCandidate {
   id: string;
@@ -66,8 +110,8 @@ export interface AIReviewCandidate {
   sourceExcerpt: string;
   suggestedSyncBlockId: string | null;
   matchReason: string;
-  decision: AIReviewDecision;
-  connectToSuggested: boolean;
+  questionDecision: AIReviewDecision;
+  syncDecision: AISyncReviewDecision;
   createdQuestionId: string | null;
 }
 
@@ -146,6 +190,7 @@ export interface Preference {
 
 export interface Workspace {
   interviews: Interview[];
+  interviewOrganizations: InterviewOrganization[];
   questions: AtomicQuestion[];
   syncBlocks: SyncBlock[];
   resumeExperiences: ResumeExperience[];
@@ -155,7 +200,7 @@ export interface Workspace {
 }
 
 export interface WorkspaceExport extends Workspace {
-  formatVersion: 5;
+  formatVersion: 10;
   exportedAt: string;
 }
 
@@ -166,6 +211,15 @@ export interface CreateInterviewInput {
   date: string;
   source: string;
   rawText: string;
+}
+
+export interface CreateInterviewOrganizationInput {
+  title: string;
+  mode: InterviewOrganizationMode;
+  collections: Array<{
+    label: string;
+    interviewIds: string[];
+  }>;
 }
 
 export interface CreateQuestionInput {
@@ -182,6 +236,10 @@ export interface CreateSyncBlockInput {
   questionIds: string[];
   resumeExperienceIds: string[];
 }
+
+export type UpdateSyncBlockInput = Partial<
+  Pick<SyncBlock, "title" | "body" | "reviewNotes" | "favorite">
+>;
 
 export interface CreateResumeExperienceInput {
   type: string;
@@ -208,7 +266,6 @@ export interface UpdateAIReviewCandidateInput {
   title?: string;
   answer?: string;
   tags?: string[];
-  connectToSuggested?: boolean;
 }
 
 export interface CreateMockInterviewInput {

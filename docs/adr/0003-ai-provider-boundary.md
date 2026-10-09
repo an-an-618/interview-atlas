@@ -6,7 +6,7 @@
 
 ## Context
 
-千面需要在保持本地优先和人工最终决策的前提下接入用户自备模型。当前交付形态是纯浏览器静态客户端，没有产品后端、系统钥匙串或可信的服务端代理。
+见字·如面需要在保持本地优先和人工最终决策的前提下接入用户自备模型。当前交付形态是纯浏览器静态客户端，没有产品后端、系统钥匙串或可信的服务端代理。
 
 首个 AI 闭环需要测试连接、面经结构化和同步块匹配建议，同时不能让 Provider 协议、凭据处理或模型响应格式散落在 React 页面中。
 
@@ -43,15 +43,31 @@ In the browser milestone, API Key is stored only in `sessionStorage`. It is remo
 
 Every content-bearing request requires an explicit user action. Before the first request in a workflow, the UI shows the destination endpoint and the categories of data being sent.
 
-AI output remains transient until the user edits and confirms selected candidates. The first version does not automatically create relationships, overwrite answers, merge synchronized blocks, or retry in the background.
+Validated AI output is saved locally as pending review candidates. Only explicit user acceptance creates atomic questions or relationships. AI never silently overwrites user answers or merges synchronized blocks.
 
-Within an active, user-initiated extraction, malformed or length-limited output may trigger one regeneration using the original evidence and the same provider. A length-limited response increases the output budget from 8,000 to 16,000 tokens for that retry. Closing or cancelling the operation stops further requests. HTTP, network, timeout, and refusal errors do not trigger regeneration. The import dialog discloses this retry; no failed model output is stored or included in the next prompt.
+As of 2026-10-01 (issue #15), user-initiated interview extraction belongs to an application-level FIFO queue with one active interview at a time. Closing the import dialog or navigating detaches the view without cancelling work. Explicit cancellation aborts the request and removes queued work. Tasks snapshot source text, provider configuration and credentials in memory; only task ID, status, progress, error and unread notification state are persisted on the interview. Duplicate starts for the same active interview reuse its task.
+
+Overview's pending review queue includes queued/running, failed and interrupted interviews. Active interviews appear first in the interview list, with newest imports first. Successful review persistence produces a lasting, clickable in-app completion notification. Failure also produces a notification and an explicit retry action. Notifications remain until dismissed; notification clicks open the interview's existing review UI. No browser notification permission is required.
+
+The queue lives for the application session, not in a cloud service or service worker. Refreshing, closing the tab or quitting the desktop app stops execution; persisted queued/running states become interrupted on next load. The original draft survives. Workspace replacement aborts work, and result writes verify both task ID and unchanged source to prevent stale writes. Credentials are never added to task metadata or exports. Restored backups do not restore runnable jobs.
+
+As of issue #18, extraction uses a staged harness. System messages contain only stage instructions; user messages contain structured evidence. Source text is losslessly addressed as numbered units and supplied in full for identification and coverage. Answer requests use deterministic, question-anchored source windows instead of repeatedly sending the entire transcript. Unit numbering is for verifiable citations only.
+
+Identification returns question titles, source quotes and an explicit pagination flag, initially at most 24 questions per page. A filled page triggers another request even if the model reports completion. A second full-transcript pass checks for omissions. Source quotes are resolved across the complete original text with conservative Unicode, whitespace and punctuation normalization; the stored excerpt is always sliced back from the original text. When a model quote still cannot be located, a valid source unit plus lexical overlap provides a bounded fallback instead of invalidating unrelated questions. Duplicate title/position entries are removed while distinct occurrences remain.
+
+The program assigns stable task-local question IDs, sorts by source position and requests answers in batches of four. Each target carries only its locally derived source context, from shortly before the question to the next identified question, rather than repeating the full transcript. Two answer batches may run concurrently. Each target ID must return exactly once, including empty answers when none are attributable. Answers use the interviewee's first-person or direct-statement voice; known third-person speaker prefixes are removed deterministically without rewriting the remaining content.
+
+Matching is a separate, optional stage. Local lexical retrieval ranks all visible synchronized blocks, with at most six options per question (bounded titles and 1,200-character summaries). Only those options and the question/answer preview are sent to the matcher, with at most two batches in flight. No transcript is sent in matching; no synchronized-block content is sent in identification or answer generation. Match responses must refer to their own provided option IDs and cannot alter question content. A persistent matching failure leaves that batch unmatched instead of discarding completed questions.
+
+Extraction requests use a 16,000-token output budget. Length-limited responses immediately reduce inventory page size or answer/matching batch size; malformed structured output receives one regeneration. Identification retains the full source, while answer retries retain the same target-local evidence. Other HTTP, network and refusal errors stop the required identification/answer stages. Each request has a 180-second deadline; the operation checks a 45-minute deadline between requests and rejects late responses, with at most 240 completion attempts (JSON compatibility fallback may add one HTTP request per attempt). A pending request may run up to its individual deadline. More than 100,000 source UTF-16 code units or 400 identified questions fails explicitly instead of silently truncating. Provider context-capacity errors require a larger-context model.
+
+Explicit cancellation or application shutdown stops further requests; dismissing a dialog does not. Progress includes the current stage. All required stages must complete before results enter review. Intermediate successful work remains transient and is not resumable after failure/reload. Full-text repetition increases input cost; lexical retrieval can miss synonyms; model self-checking does not guarantee recall or factuality. Real-model evaluation and user review remain necessary. See [implementation and evaluation](../engineering/ai-extraction-harness.md).
 
 Structured requests use JSON mode. If a provider explicitly rejects `response_format` / `json_object` as unsupported (HTTP 400 or 422), the adapter may resend that request once without this optional parameter, retaining the JSON instructions. Partial JSON is rejected rather than repaired into apparently complete results.
 
 ### Data minimization
 
-Interview extraction sends the selected interview and only truncated synchronized-block context required for match suggestions. It does not send the complete workspace.
+Interview extraction sends the selected interview as evidence; matching separately sends only locally retrieved synchronized-block options. It does not send the complete workspace, unrelated interviews, review notes or credentials in model messages.
 
 ## Alternatives considered
 
@@ -73,7 +89,7 @@ Deferred as the sole option. Browser and desktop local inference require separat
 
 ## Consequences
 
-- Users can choose a compatible cloud or local endpoint without a 千面 account.
+- Users can choose a compatible cloud or local endpoint without a 见字·如面 account.
 - Browser requests may fail because a provider does not allow CORS; the UI must explain this rather than retry through an undisclosed proxy.
 - Closing the browser session may require the user to enter the API Key again.
 - Provider output is untrusted and must pass runtime validation before rendering or saving.
@@ -85,5 +101,5 @@ Deferred as the sole option. Browser and desktop local inference require separat
 - Reloading the same tab restores session credentials; a new browser session does not rely on persistent application storage.
 - Unknown or malformed model fields do not enter the workspace.
 - An unknown synchronized-block ID is discarded.
-- Cancellation and timeout leave the workspace unchanged.
+- Cancellation and timeout preserve the original draft and existing knowledge; only task status changes.
 - Confirming selected extraction candidates creates only those atomic questions and preserves the source interview.

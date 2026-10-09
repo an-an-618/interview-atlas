@@ -3,7 +3,7 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-app_name="千面"
+app_name="见字·如面"
 artifact_name="Interview-Atlas"
 version="$(node -p "require('${root_dir}/package.json').version")"
 architecture="$(uname -m)"
@@ -27,9 +27,7 @@ if [[ ! -d "${app_path}" ]]; then
   exit 1
 fi
 
-if ! codesign --verify --deep --strict "${app_path}" >/dev/null 2>&1; then
-  codesign --force --deep --sign - "${app_path}"
-fi
+"${root_dir}/scripts/sign-macos-app.sh" "${app_path}"
 
 mkdir -p "${dmg_dir}"
 ditto "${app_path}" "${stage_dir}/${app_name}.app"

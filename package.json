@@ -1,6 +1,6 @@
 {
   "name": "interview-atlas",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,7 +11,8 @@
     "build": "tsc -b && vite build",
     "desktop": "tauri",
     "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build --bundles app && bash scripts/create-macos-dmg.sh",
+    "desktop:build": "MACOSX_DEPLOYMENT_TARGET=15.0 tauri build --bundles app && bash scripts/create-macos-dmg.sh",
+    "desktop:install:macos": "npm run desktop:build && bash scripts/install-macos-app.sh",
     "desktop:build:macos": "npm run desktop:build",
     "desktop:build:windows": "tauri build --bundles nsis,msi",
     "typecheck": "tsc -b --pretty false",
@@ -22,6 +23,8 @@
     "@fontsource/inter": "5.3.0",
     "@fontsource/jetbrains-mono": "5.3.0",
     "@fontsource/source-serif-4": "5.3.0",
+    "@tauri-apps/api": "^2.12.0",
+    "@tauri-apps/plugin-opener": "2.7.0",
     "lucide-react": "1.49.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"

@@ -8,7 +8,6 @@ import {
   LoaderCircle,
   PlugZap,
   ShieldCheck,
-  SlidersHorizontal,
   Sparkles,
   XCircle,
 } from "lucide-react";
@@ -18,10 +17,9 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { createPortal } from "react-dom";
 import type {
-  AIClient,
   AIExtractionCandidate,
+  AIExtractionProgress,
   AIProviderCredentialId,
   AIProviderConfig,
   AIProviderPresetId,
@@ -33,15 +31,28 @@ import {
 import type {
   CreateInterviewInput,
   Interview,
+  InterviewAIReview,
   SaveAIReviewCandidateInput,
   SyncBlock,
 } from "../domain/types";
+import { extractionLabel } from "../ai/extractionQueue";
+import { handleExternalLinkClick } from "../platform/openExternalLink";
+import { AnswerEditor } from "./AnswerEditor";
+
+export function extractionProgressLabel(progress: AIExtractionProgress | null) {
+  if (!progress) return "正在准备解析…";
+  if (progress.phase === "retrying") return "正在重新尝试解析…";
+  if (progress.stage === "inventory") return "正在通读全文，识别面试问题…";
+  if (progress.stage === "coverage") return "正在复查全文中的遗漏问题…";
+  if (progress.stage === "answers") return "正在整理每个问题的当次回答…";
+  if (progress.stage === "matching") return "正在查找可关联的同步块…";
+  return "正在解析面经…";
+}
 
 interface AISettingsPanelProps {
   config: AIProviderConfig;
   loading: boolean;
   error: string | null;
-  embedded?: boolean;
   onSave: (config: AIProviderConfig) => Promise<void>;
   getApiKey: (credentialId: AIProviderCredentialId) => string;
   onSetApiKey: (credentialId: AIProviderCredentialId, value: string) => void;
@@ -53,7 +64,6 @@ export function AISettingsPanel({
   config,
   loading,
   error,
-  embedded = false,
   onSave,
   getApiKey,
   onSetApiKey,
@@ -135,6 +145,11 @@ export function AISettingsPanel({
     const nextId = preset?.id ?? "custom";
     setSelectedProviderId(nextId);
     if (!preset) {
+      setDraft({
+        protocol: "openai-compatible",
+        endpoint: "",
+        model: "",
+      });
       resetConnectionState();
       return;
     }
@@ -147,21 +162,15 @@ export function AISettingsPanel({
   };
 
   return (
-    <section className="ai-settings">
-      <header
-        className={`ai-settings-header${embedded ? " embedded" : ""}`}
-      >
-        {embedded ? (
-          <strong>连接状态</strong>
-        ) : (
+    <section className="service-config-section ai-settings">
+      <header className="service-config-header">
+        <div>
+          <Sparkles size={20} aria-hidden="true" />
           <div>
-            <p className="eyebrow">AI service</p>
-            <h2>模型服务</h2>
-            <p>
-              预设会自动填写服务地址和推荐模型，也可以选择自定义接入。
-            </p>
+            <strong>AI 解析服务</strong>
+            <small>用于面经拆解、原子问答提取与模拟面试。</small>
           </div>
-        )}
+        </div>
         <span className={`connection-state state-${testState}`}>
           {testState === "testing" ? (
             <LoaderCircle className="spin" size={15} aria-hidden="true" />
@@ -182,150 +191,52 @@ export function AISettingsPanel({
         </span>
       </header>
 
-      <form className="ai-settings-form" onSubmit={save}>
-        <fieldset className="ai-provider-picker">
-          <legend>
-            <span>选择模型提供方</span>
-            <small>每个提供方的密钥在当前浏览器会话中分别保留</small>
-          </legend>
-          <div className="ai-provider-presets">
-            {aiProviderPresets.map((preset) => {
-              const active = selectedProviderId === preset.id;
-              return (
-                <button
-                  className={[
-                    active ? "active" : "",
-                    getApiKey(preset.id) ? "has-credential" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  type="button"
-                  key={preset.id}
-                  data-provider={preset.id}
-                  aria-pressed={active}
-                  onClick={() => selectProvider(preset)}
-                >
-                  <span className="provider-mark" aria-hidden="true">
-                    {preset.mark}
-                  </span>
-                  <span>
-                    <strong>{preset.label}</strong>
-                    <small>{preset.description}</small>
-                  </span>
-                  {active ? <Check size={14} aria-hidden="true" /> : null}
-                  {getApiKey(preset.id) ? (
-                    <span className="provider-key-state">
-                      <KeyRound size={10} aria-hidden="true" />
-                      已填
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-            <button
-              className={[
-                selectedProviderId === "custom" ? "active" : "",
-                getApiKey("custom") ? "has-credential" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              type="button"
-              data-provider="custom"
-              aria-pressed={selectedProviderId === "custom"}
-              onClick={() => selectProvider(null)}
+      <form className="service-config-form" onSubmit={save}>
+        <div className="service-field-grid parsing-service-fields">
+          <label>
+            <span>服务商</span>
+            <select
+              value={selectedProviderId}
+              onChange={(event) => {
+                const nextId = event.target.value;
+                selectProvider(
+                  aiProviderPresets.find((preset) => preset.id === nextId) ??
+                    null,
+                );
+              }}
             >
-              <span className="provider-mark" aria-hidden="true">
-                <SlidersHorizontal size={16} />
-              </span>
-              <span>
-                <strong>自定义</strong>
-                <small>兼容服务</small>
-              </span>
-              {selectedProviderId === "custom" ? (
-                <Check size={14} aria-hidden="true" />
-              ) : null}
-              {getApiKey("custom") ? (
-                <span className="provider-key-state">
-                  <KeyRound size={10} aria-hidden="true" />
-                  已填
-                </span>
-              ) : null}
-            </button>
-          </div>
-        </fieldset>
+              {aiProviderPresets.map((preset) => (
+                <option value={preset.id} key={preset.id}>
+                  {preset.label}
+                </option>
+              ))}
+              <option value="custom">自定义兼容服务</option>
+            </select>
+          </label>
 
-        <section className="ai-provider-config">
-          <div className="ai-selected-provider">
-            <span
-              className="provider-mark large"
-              data-provider={selectedPreset?.id ?? "custom"}
-              aria-hidden="true"
-            >
-              {selectedPreset?.mark ?? <SlidersHorizontal size={18} />}
-            </span>
-            <div>
-              <strong>{selectedPreset?.label ?? "自定义服务"}</strong>
-              <small>
-                {selectedPreset?.description ?? "OpenAI-compatible"}
-              </small>
-            </div>
+          <label>
+            <span>模型</span>
             {selectedPreset ? (
-              <nav aria-label={`${selectedPreset.label} 接入帮助`}>
-                <a
-                  href={selectedPreset.consoleUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  获取密钥
-                  <ExternalLink size={12} aria-hidden="true" />
-                </a>
-                <a
-                  href={selectedPreset.docsUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  接入文档
-                  <ExternalLink size={12} aria-hidden="true" />
-                </a>
-              </nav>
-            ) : null}
-          </div>
-
-          <p className="ai-provider-note">
-            {selectedPreset?.note ??
-              "适用于其他 OpenAI-compatible 服务或本地模型。请自行确认端点支持浏览器跨域请求。"}
-          </p>
-
-          <div className="ai-config-fields">
-            <label className="ai-endpoint-field">
-              <span>服务地址</span>
-              <input
-                type="url"
-                value={draft.endpoint}
-                readOnly={Boolean(selectedPreset)}
+              <select
+                value={draft.model}
                 onChange={(event) => {
-                  setDraft({ ...draft, endpoint: event.target.value });
+                  setDraft({ ...draft, model: event.target.value });
                   resetConnectionState();
                 }}
-                placeholder="https://api.example.com/v1"
                 required
-              />
-              <small>
-                {selectedPreset
-                  ? "已使用该提供方的官方兼容地址。"
-                  : "可填写 API 基础地址或完整的 /chat/completions 地址。"}
-              </small>
-            </label>
-
-            <label>
-              <span>模型</span>
+              >
+                {!selectedPreset.models.includes(draft.model) ? (
+                  <option value={draft.model}>{draft.model}</option>
+                ) : null}
+                {selectedPreset.models.map((model) => (
+                  <option value={model} key={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            ) : (
               <input
                 value={draft.model}
-                list={
-                  selectedPreset
-                    ? `ai-model-options-${selectedPreset.id}`
-                    : undefined
-                }
                 onChange={(event) => {
                   setDraft({ ...draft, model: event.target.value });
                   resetConnectionState();
@@ -333,97 +244,127 @@ export function AISettingsPanel({
                 placeholder="输入模型名称"
                 required
               />
-              {selectedPreset ? (
-                <datalist id={`ai-model-options-${selectedPreset.id}`}>
-                  {selectedPreset.models.map((model) => (
-                    <option value={model} key={model} />
-                  ))}
-                </datalist>
-              ) : null}
-              <small>已填入推荐模型，也可以直接输入该提供方的其他模型。</small>
-            </label>
+            )}
+          </label>
 
-            <label>
-              <span>API Key</span>
-              <div className="secret-input">
-                <KeyRound size={16} aria-hidden="true" />
-                <input
-                  type="password"
-                  autoComplete="off"
-                  value={apiKey}
-                  onChange={(event) => {
-                    onSetApiKey(selectedProviderId, event.target.value);
+          <label>
+            <span>API Key</span>
+            <div className="secret-input">
+              <KeyRound size={16} aria-hidden="true" />
+              <input
+                type="password"
+                autoComplete="off"
+                value={apiKey}
+                onChange={(event) => {
+                  onSetApiKey(selectedProviderId, event.target.value);
+                  resetConnectionState();
+                }}
+                placeholder="输入当前服务商的 API Key"
+              />
+              {apiKey ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClearApiKey(selectedProviderId);
                     resetConnectionState();
                   }}
-                  placeholder="输入当前提供方的 API Key"
-                />
-                {apiKey ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClearApiKey(selectedProviderId);
-                      resetConnectionState();
-                    }}
-                  >
-                    清除
-                  </button>
-                ) : null}
-              </div>
-              <small>仅保存在当前浏览器会话，不进入数据库、备份或日志。</small>
-            </label>
-          </div>
-
-          {localError || error ? (
-            <p className="inline-error" role="alert">
-              {localError || error}
-            </p>
-          ) : null}
-
-          <footer>
-            <span>
-              <ShieldCheck size={15} aria-hidden="true" />
-              内容仅在你主动使用 AI 时发送
-            </span>
-            <div>
-              <button
-                className="button secondary"
-                type="button"
-                onClick={test}
-                disabled={loading || testState === "testing"}
-              >
-                {testState === "testing" ? (
-                  <LoaderCircle className="spin" size={15} aria-hidden="true" />
-                ) : (
-                  <PlugZap size={15} aria-hidden="true" />
-                )}
-                测试连接
-              </button>
-              <button
-                className="button primary"
-                type="submit"
-                disabled={loading || saveState === "saving"}
-              >
-                {saveState === "saved" ? (
-                  <Check size={15} aria-hidden="true" />
-                ) : null}
-                {saveState === "saving"
-                  ? "验证中"
-                  : saveState === "saved"
-                    ? "已启用"
-                    : testState === "success"
-                      ? "保存并启用"
-                      : "验证并启用"}
-              </button>
+                >
+                  清除
+                </button>
+              ) : null}
             </div>
-          </footer>
-        </section>
+          </label>
+
+          {!selectedPreset ? (
+            <label className="service-endpoint-field">
+              <span>服务地址</span>
+              <input
+                type="url"
+                value={draft.endpoint}
+                onChange={(event) => {
+                  setDraft({ ...draft, endpoint: event.target.value });
+                  resetConnectionState();
+                }}
+                placeholder="https://api.example.com/v1"
+                required
+              />
+            </label>
+          ) : null}
+        </div>
+
+        <div className="service-provider-meta">
+          <p>
+            {selectedPreset?.note ??
+              "适用于其他 OpenAI-compatible 服务或本地模型，请确认端点支持浏览器跨域请求。"}
+          </p>
+          {selectedPreset ? (
+            <nav aria-label={`${selectedPreset.label} 接入帮助`}>
+              <a
+                href={selectedPreset.consoleUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={handleExternalLinkClick}
+              >
+                获取密钥
+                <ExternalLink size={12} aria-hidden="true" />
+              </a>
+              <a
+                href={selectedPreset.docsUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={handleExternalLinkClick}
+              >
+                接入文档
+                <ExternalLink size={12} aria-hidden="true" />
+              </a>
+            </nav>
+          ) : null}
+        </div>
+
+        {localError || error ? (
+          <p className="inline-error" role="alert">
+            {localError || error}
+          </p>
+        ) : null}
+
+        <footer className="service-config-footer">
+          <span>
+            <ShieldCheck size={15} aria-hidden="true" />
+            API Key 仅保留在当前会话
+          </span>
+          <div>
+            <button
+              className="button secondary"
+              type="button"
+              onClick={test}
+              disabled={loading || testState === "testing"}
+            >
+              {testState === "testing" ? (
+                <LoaderCircle className="spin" size={15} aria-hidden="true" />
+              ) : (
+                <PlugZap size={15} aria-hidden="true" />
+              )}
+              测试连接
+            </button>
+            <button
+              className="button primary"
+              type="submit"
+              disabled={loading || saveState === "saving"}
+            >
+              {saveState === "saved" ? (
+                <Check size={15} aria-hidden="true" />
+              ) : null}
+              {saveState === "saving"
+                ? "验证中"
+                : saveState === "saved"
+                  ? "已启用"
+                  : testState === "success"
+                    ? "保存并启用"
+                    : "验证并启用"}
+            </button>
+          </div>
+        </footer>
       </form>
-      <div className="credential-note">
-        <ShieldCheck size={17} aria-hidden="true" />
-        <span>
-          千面不会通过自有服务器转发请求。第三方模型如何保存和使用数据，由你选择的服务条款决定。
-        </span>
-      </div>
     </section>
   );
 }
@@ -434,11 +375,15 @@ export interface ReviewCandidate extends AIExtractionCandidate {
   connectToSuggested: boolean;
 }
 
-interface InterviewImportDialogProps {
-  client: AIClient;
+interface InterviewImportPageProps {
   config: AIProviderConfig;
   configured: boolean;
-  apiKey: string;
+  initialRaw?: string;
+  initialSource?: string;
+  interviews: Interview[];
+  reviews: InterviewAIReview[];
+  onStartExtraction: (interview: Interview) => string;
+  onCancelExtraction: (interviewId: string) => void;
   syncBlocks: SyncBlock[];
   onCreateDraft: (input: CreateInterviewInput) => Interview;
   onUpdateDraft: (
@@ -465,44 +410,53 @@ const sampleInterview = `字节跳动 · 前端二面 · 2026-09-24 · 60min
 5. 和产品经理意见冲突的一次经历`;
 
 export function inferInterviewInput(rawText: string): CreateInterviewInput {
-  const firstLine =
-    rawText
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find(Boolean) ?? "";
+  const lines = rawText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const firstLine = (lines[0] ?? "").replace(/^#{1,6}\s+/, "");
   const metadata = firstLine
     .split(/[·|｜]/)
     .map((part) => part.trim())
     .filter(Boolean);
-  const looksLikeQuestion = /^(?:\d+[.)、]|[-*])\s*/.test(firstLine);
-  const company = !looksLikeQuestion && metadata[0]
-    ? metadata[0].slice(0, 100)
-    : "未命名面试";
-  const descriptor = !looksLikeQuestion ? metadata[1] ?? "" : "";
-  const roundMatch = descriptor.match(
-    /((?:技术|业务|主管|HR|hr|终|一|二|三|四|五)面)$/,
-  );
-  const datePart = metadata.find((part) =>
-    /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(part),
-  );
+  const isDialogue = /^(?:\d+[.)、]|[-*]\s|发言人|说话人|speaker\b|面试官|候选人|采访者|受访者|[QA问答]\s*[:：])|[？?]/i.test(firstLine);
+  const labelled = (label: string) => {
+    const pattern = new RegExp(`^(?:${label})\\s*[:：]\\s*([^|｜·]+)`, "i");
+    return lines.slice(0, 20).map((line) => line.match(pattern)?.[1]?.trim()).find(Boolean);
+  };
+  // Only a short, delimited heading is evidence for an unlabelled company.
+  const heading = !isDialogue && metadata.length >= 2 &&
+    (metadata[0]?.length ?? 0) <= 40 && !/[:：。！!]/.test(metadata[0] ?? "");
+  const company = labelled("公司(?:名称|名)?|面试公司") ||
+    (heading ? metadata[0] : "") || "未命名面试";
+  const descriptor = heading ? metadata[1] ?? "" : "";
+  const roundPattern = /(?:技术|业务|主管|HR|终|一|二|三|四|五)面|第[一二三四五\d]+轮/gi;
+  const roundMatch = descriptor.match(roundPattern)?.[0];
+  const role = labelled("岗位(?:名称|名)?|职位(?:名称)?|面试岗位") ??
+    descriptor.replace(roundPattern, "").replace(/面经(?:\.(?:docx?|txt|md|pdf))?$/i, "").trim();
+  const datePart = labelled("面试日期|日期") ??
+    (heading ? metadata.find((part) => /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(part)) : undefined);
+  const dateMatch = datePart?.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
 
   return {
     company,
-    role: descriptor.replace(roundMatch?.[1] ?? "", "").trim(),
-    round: roundMatch?.[1] ?? "",
-    date: datePart
-      ? datePart.replace(/[/.]/g, "-")
+    role,
+    round: labelled("面试轮次|轮次") ?? roundMatch ??
+      (heading ? metadata.slice(2).find((part) => /^(?:(?:技术|业务|主管|HR|终|一|二|三|四|五)面|第[一二三四五\d]+轮)$/i.test(part)) : "") ?? "",
+    date: dateMatch
+      ? `${dateMatch[1]}-${dateMatch[2]!.padStart(2, "0")}-${dateMatch[3]!.padStart(2, "0")}`
       : new Date().toISOString().slice(0, 10),
     source: "粘贴导入",
     rawText,
   };
 }
 
-export function InterviewImportDialog({
-  client,
+export function InterviewImportPage({
   config,
   configured,
-  apiKey,
+  initialRaw = "",
+  initialSource,
+  interviews,
+  reviews,
+  onStartExtraction,
+  onCancelExtraction,
   syncBlocks,
   onCreateDraft,
   onUpdateDraft,
@@ -510,38 +464,38 @@ export function InterviewImportDialog({
   onComplete,
   onClose,
   onOpenSettings,
-}: InterviewImportDialogProps) {
+}: InterviewImportPageProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [raw, setRaw] = useState("");
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [raw, setRaw] = useState(initialRaw);
+  const [metadataOverrides, setMetadataOverrides] = useState<
+    Partial<CreateInterviewInput>
+  >(initialSource ? { source: initialSource } : {});
+  const inferredInput = { ...inferInterviewInput(raw), ...metadataOverrides };
+  const [localError, setError] = useState<string | null>(null);
   const [draftInterviewId, setDraftInterviewId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ReviewCandidate[]>([]);
-  const controllerRef = useRef<AbortController | null>(null);
-  const progressTimerRef = useRef<number | null>(null);
-  const resultTimerRef = useRef<number | null>(null);
-
-  const clearTimers = () => {
-    if (progressTimerRef.current !== null) {
-      window.clearInterval(progressTimerRef.current);
-      progressTimerRef.current = null;
-    }
-    if (resultTimerRef.current !== null) {
-      window.clearTimeout(resultTimerRef.current);
-      resultTimerRef.current = null;
-    }
-  };
-
-  useEffect(
-    () => () => {
-      clearTimers();
-      controllerRef.current?.abort();
-    },
-    [],
-  );
+  const task = interviews.find((item) => item.id === draftInterviewId)?.extractionTask;
+  const extractionProgress = task?.progress ?? null;
+  const progress = task?.status === "completed" ? 100
+    : extractionProgress ? Math.floor(extractionProgress.completed / extractionProgress.total * 100) : 0;
+  const error = localError ?? (step === 2 ? task?.error : null);
+  const loadedTask = useRef<string | null>(null);
+  useEffect(() => {
+    if (task?.status !== "completed" || loadedTask.current === task.id) return;
+    const review = reviews.find((item) => item.interviewId === draftInterviewId);
+    if (!review) return;
+    loadedTask.current = task.id;
+    setCandidates(review.candidates.map((candidate) => ({
+      ...candidate,
+      selected: candidate.questionDecision === "pending",
+      connectToSuggested: false,
+      tagsText: candidate.tags.join("，"),
+    })));
+    setStep(3);
+  }, [task, reviews, draftInterviewId]);
 
   const saveDraft = () => {
-    const input = inferInterviewInput(raw);
+    const input = { ...inferredInput, company: inferredInput.company.trim() || "未命名面试" };
     const interview = draftInterviewId
       ? onUpdateDraft(draftInterviewId, input)
       : onCreateDraft(input);
@@ -563,7 +517,7 @@ export function InterviewImportDialog({
       connectToSuggested: candidate.connectToSuggested,
     }));
 
-  const startExtraction = async () => {
+  const startExtraction = () => {
     if (!raw.trim()) return;
     if (!configured) {
       setError("尚未配置 AI 服务。可以先保存原文，或前往设置完成配置。");
@@ -571,41 +525,9 @@ export function InterviewImportDialog({
     }
 
     const interview = saveDraft();
-    const controller = new AbortController();
-    controllerRef.current = controller;
     setError(null);
-    setProgress(8);
     setStep(2);
-    clearTimers();
-    progressTimerRef.current = window.setInterval(() => {
-      setProgress((current) => Math.min(88, current + 4 + Math.random() * 8));
-    }, 360);
-
-    try {
-      const extracted = await client.extractInterview(
-        config,
-        apiKey,
-        { interview, syncBlocks },
-        controller.signal,
-      );
-      clearTimers();
-      setProgress(100);
-      const reviewCandidates = extracted.map((candidate) => ({
-        ...candidate,
-        selected: true,
-        tagsText: candidate.tags.join("，"),
-        connectToSuggested: false,
-      }));
-      setCandidates(reviewCandidates);
-      onSaveReview(interview.id, serializeCandidates(reviewCandidates));
-      resultTimerRef.current = window.setTimeout(() => setStep(3), 320);
-    } catch (reason) {
-      clearTimers();
-      if (controller.signal.aborted) return;
-      setError(reason instanceof Error ? reason.message : "AI 拆解失败。");
-    } finally {
-      controllerRef.current = null;
-    }
+    onStartExtraction(interview);
   };
 
   useEffect(() => {
@@ -624,11 +546,8 @@ export function InterviewImportDialog({
   });
 
   const cancelExtraction = () => {
-    clearTimers();
-    controllerRef.current?.abort();
-    controllerRef.current = null;
+    if (draftInterviewId) onCancelExtraction(draftInterviewId);
     setError(null);
-    setProgress(0);
     setStep(1);
   };
 
@@ -652,17 +571,9 @@ export function InterviewImportDialog({
   const currentStage =
     progress >= 100
       ? "完成 · 原文已保存在本地"
-      : progress >= 72
-        ? "生成审核清单…"
-        : progress >= 46
-          ? "匹配已有同步块…"
-          : progress >= 22
-            ? "拆分候选问答块…"
-            : "识别面经结构…";
+      : task?.status === "queued" ? extractionLabel(task) : extractionProgressLabel(extractionProgress);
 
   const close = () => {
-    clearTimers();
-    controllerRef.current?.abort();
     if (step === 3 && draftInterviewId) {
       onSaveReview(draftInterviewId, serializeCandidates(candidates));
     }
@@ -686,23 +597,19 @@ export function InterviewImportDialog({
     onClose(draftInterviewId);
   };
 
-  return createPortal(
-    <div className="modal-layer import-layer" role="presentation">
-      <button
-        className="modal-backdrop"
-        aria-label="关闭导入面经"
-        onClick={close}
-      />
+  return (
       <section
-        className="import-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="import-modal-title"
+        className="create-detail-page import-workspace"
+        aria-labelledby="import-page-title"
       >
         <header className="import-modal-head">
+          <button className="back-button create-detail-back" type="button" onClick={close}>
+            <ArrowLeft size={16} aria-hidden="true" />
+            返回新建
+          </button>
           <p className="eyebrow">导入面经</p>
           <div>
-            <h2 id="import-modal-title">
+            <h2 id="import-page-title">
               {step === 1
                 ? "粘贴一段面试原文"
                 : step === 2
@@ -751,12 +658,31 @@ export function InterviewImportDialog({
                 <Sparkles size={12} aria-hidden="true" />
                 试试示例文本
               </button>
+              <div className="import-metadata-section">
+                <header>
+                  <strong>基础信息</strong>
+                  <span>用于归档和后续检索</span>
+                </header>
+                <div className="interview-metadata-fields import-metadata-fields">
+                  {([["company", "公司名"], ["role", "岗位名"], ["round", "面试轮次"], ["date", "面试日期"]] as const).map(([field, label]) => (
+                    <label key={field}>
+                      <span>{label}</span>
+                      <input
+                        type={field === "date" ? "date" : "text"}
+                        value={inferredInput[field]}
+                        onChange={(event) => setMetadataOverrides((current) => ({ ...current, [field]: event.target.value }))}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <p>未识别的信息可手动填写，也可稍后在面试详情中修改。</p>
+              </div>
               <div className="import-privacy-note">
                 <ShieldCheck size={16} aria-hidden="true" />
                 <span>
                   点击 AI 提取时，原文先保存到本地，再直接发送到你配置的
                   <code>{configured ? config.endpoint : " AI 服务"}</code>
-                  ；不会经过千面服务器。AI 结果格式异常或不完整时，会自动重新提取一次。
+                  ；不会经过见字·如面服务器。较长的面经可能需要更多时间，遇到解析异常时会自动尝试恢复。
                 </span>
               </div>
               {error ? (
@@ -781,7 +707,7 @@ export function InterviewImportDialog({
                 <span />
                 <Sparkles size={23} />
               </div>
-              <h3>{error ? "拆解没有完成" : currentStage}</h3>
+              <h3 aria-live="polite">{error ? "拆解没有完成" : currentStage}</h3>
               <p>
                 {error
                   ? error
@@ -794,28 +720,8 @@ export function InterviewImportDialog({
                     <span style={{ width: `${Math.round(progress)}%` }} />
                     <strong>{Math.round(progress)}%</strong>
                   </div>
-                  <div className="import-checklist">
-                    {[
-                      ["切分段落", 8],
-                      ["抽取问题", 32],
-                      ["匹配同步块", 62],
-                      ["生成结果", 100],
-                    ].map(([label, threshold]) => (
-                      <span
-                        className={
-                          progress >= Number(threshold) ? "complete" : ""
-                        }
-                        key={label}
-                      >
-                        <i>
-                          {progress >= Number(threshold) ? (
-                            <Check size={11} />
-                          ) : null}
-                        </i>
-                        {label}
-                      </span>
-                    ))}
-                  </div>
+                  <p>离开当前页面后会继续处理，完成时会通知你。可从主页或面试记录查看进度。</p>
+                  <button className="button secondary" type="button" onClick={close}>在后台继续</button>
                 </>
               ) : (
                 <button
@@ -900,20 +806,21 @@ export function InterviewImportDialog({
                           placeholder="使用逗号分隔"
                         />
                       </label>
-                      <label className="import-answer-field">
+                      <div className="import-answer-field">
                         <span>当次回答</span>
-                        <textarea
+                        <AnswerEditor
                           value={candidate.answer}
-                          onChange={(event) =>
+                          onChange={(answer) =>
                             updateCandidate(index, {
-                              answer: event.target.value,
+                              answer,
                             })
                           }
                           disabled={!candidate.selected}
-                          rows={3}
+                          minRows={3}
+                          label={`第 ${index + 1} 条候选的当次回答`}
                           placeholder="原文没有明确回答时保持为空"
                         />
-                      </label>
+                      </div>
                       {syncBlock ? (
                         <div
                           className={`import-match ${
@@ -943,8 +850,8 @@ export function InterviewImportDialog({
                             disabled={!candidate.selected}
                           >
                             {candidate.connectToSuggested
-                              ? "改为新问题"
-                              : "连接"}
+                              ? "取消关联"
+                              : "采纳关联建议"}
                           </button>
                         </div>
                       ) : (
@@ -996,7 +903,7 @@ export function InterviewImportDialog({
                 onClick={cancelExtraction}
               >
                 <ArrowLeft size={14} aria-hidden="true" />
-                返回修改
+                取消拆解并修改
               </button>
               <span>原文草稿已保存在本地</span>
             </>
@@ -1032,7 +939,5 @@ export function InterviewImportDialog({
           )}
         </footer>
       </section>
-    </div>,
-    document.body,
   );
 }

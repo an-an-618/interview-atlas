@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SyncBlock, Workspace } from "./types";
 import {
+  addInterviewOrganization,
   addMockInterview,
   addQuestion,
   addResumeExperience,
@@ -9,18 +10,23 @@ import {
   appendMockInterviewMessage,
   applyMockInterviewAnalysis,
   completeInterviewAIReview,
+  deleteInterviewOrganization,
   deleteResumeExperience,
   emptyWorkspace,
   endMockInterview,
+  getFavoriteSyncBlocks,
   getRandomQuestion,
-  getRecommendedSyncBlocks,
   linkQuestionToSyncBlock,
-  resolveAIReviewCandidate,
+  resolveAllAIReviewCandidates,
+  resolveAIReviewQuestion,
+  resolveAIReviewSync,
   saveInterviewAIReview,
+  searchSyncBlocks,
   sortSyncBlocksByLinkedQuestionCount,
   updateResumeExperience,
   updateInterview,
   updateQuestion,
+  updateSyncBlock,
 } from "./workspace";
 
 const baseWorkspace = (): Workspace => ({
@@ -43,6 +49,87 @@ const baseWorkspace = (): Workspace => ({
 });
 
 describe("workspace domain", () => {
+  it("saves and removes interview organizations with valid collection members", () => {
+    const created = addInterviewOrganization(baseWorkspace(), {
+      title: " 目标公司 ",
+      mode: "custom",
+      collections: [
+        {
+          label: " 腾讯 ",
+          interviewIds: ["interview-1", "interview-1", "missing"],
+        },
+        { label: "空集合", interviewIds: [] },
+      ],
+    });
+
+    expect(created.organization).toMatchObject({
+      title: "目标公司",
+      mode: "custom",
+      collections: [
+        { label: "腾讯", interviewIds: ["interview-1"] },
+      ],
+    });
+    expect(
+      deleteInterviewOrganization(
+        created.workspace,
+        created.organization.id,
+      ).interviewOrganizations,
+    ).toEqual([]);
+    expect(() =>
+      addInterviewOrganization(baseWorkspace(), {
+        title: "空整理",
+        mode: "custom",
+        collections: [],
+      }),
+    ).toThrow("至少需要一个包含面试记录的集合");
+  });
+
+  it("edits sync block text without changing source answers or relationships", () => {
+    const source = addQuestion(baseWorkspace(), "interview-1", {
+      title: "原问题",
+      answer: "当时的回答",
+      tags: [],
+    });
+    const created = addSyncBlock(source.workspace, {
+      title: "原标题",
+      body: "原正文",
+      reviewNotes: "原笔记",
+      questionIds: [source.question.id],
+      resumeExperienceIds: [],
+    });
+    const result = updateSyncBlock(created.workspace, created.syncBlock.id, {
+      body: " 1. 第一段\n• 第二段 ",
+    });
+    expect(result.syncBlock.body).toBe("第一段\n第二段");
+    expect(result.syncBlock.title).toBe("原标题");
+    expect(result.syncBlock.reviewNotes).toBe("原笔记");
+    expect(result.syncBlock.linkedQuestionIds).toEqual([source.question.id]);
+    expect(result.workspace.questions).toBe(created.workspace.questions);
+    expect(result.workspace.interviews).toBe(created.workspace.interviews);
+    expect(result.workspace.resumeExperiences).toBe(created.workspace.resumeExperiences);
+    expect(created.syncBlock.body).toBe("原正文");
+    const cleared = updateSyncBlock(result.workspace, created.syncBlock.id, {
+      reviewNotes: "",
+    });
+    expect(cleared.syncBlock.reviewNotes).toBe("");
+    expect(cleared.syncBlock.body).toBe("第一段\n第二段");
+    expect(() =>
+      updateSyncBlock(result.workspace, created.syncBlock.id, { title: "  " }),
+    ).toThrow("同步块标题不能为空");
+    expect(() =>
+      updateSyncBlock(result.workspace, "missing", { title: "新标题" }),
+    ).toThrow("同步块不存在");
+
+    const favorited = updateSyncBlock(
+      result.workspace,
+      created.syncBlock.id,
+      { favorite: true },
+    );
+    expect(favorited.syncBlock.favorite).toBe(true);
+    expect(favorited.syncBlock.title).toBe("原标题");
+    expect(favorited.syncBlock.linkedQuestionIds).toEqual([source.question.id]);
+  });
+
   it("adds a question to its source interview and marks the interview pending", () => {
     const result = addQuestion(baseWorkspace(), "interview-1", {
       title: "如何定义成功？",
@@ -286,7 +373,12 @@ describe("workspace domain", () => {
 
     expect(workspace.questions).toHaveLength(0);
     expect(workspace.aiReviews[0]?.candidates).toHaveLength(1);
-    expect(workspace.aiReviews[0]?.candidates[0]?.decision).toBe("pending");
+    expect(
+      workspace.aiReviews[0]?.candidates[0]?.questionDecision,
+    ).toBe("pending");
+    expect(workspace.aiReviews[0]?.candidates[0]?.syncDecision).toBe(
+      "not_suggested",
+    );
     expect(workspace.interviews[0]?.status).toBe("pending");
   });
 
@@ -310,7 +402,7 @@ describe("workspace domain", () => {
       },
     ]);
     const review = pending.aiReviews[0]!;
-    const accepted = resolveAIReviewCandidate(
+    const accepted = resolveAIReviewQuestion(
       pending,
       "interview-1",
       review.candidates[0]!.id,
@@ -320,7 +412,7 @@ describe("workspace domain", () => {
     expect(accepted.questions).toHaveLength(1);
     expect(accepted.interviews[0]?.status).toBe("pending");
 
-    const completed = resolveAIReviewCandidate(
+    const completed = resolveAIReviewQuestion(
       accepted,
       "interview-1",
       review.candidates[1]!.id,
@@ -328,6 +420,88 @@ describe("workspace domain", () => {
     );
     expect(completed.questions).toHaveLength(1);
     expect(completed.interviews[0]?.status).toBe("reviewed");
+  });
+
+  it("decouples question adoption from sync association decisions", () => {
+    const withSync = addSyncBlock(baseWorkspace(), {
+      title: "成功标准",
+      body: "目标、指标和约束。",
+      reviewNotes: "",
+      questionIds: [],
+      resumeExperienceIds: [],
+    }).workspace;
+    const syncBlockId = withSync.syncBlocks[0]!.id;
+    const pending = saveInterviewAIReview(withSync, "interview-1", [
+      {
+        title: "如何定义成功？",
+        answer: "先定义目标。",
+        tags: [],
+        sourceExcerpt: "原文",
+        suggestedSyncBlockId: syncBlockId,
+        matchReason: "主题一致",
+      },
+    ]);
+    const candidateId = pending.aiReviews[0]!.candidates[0]!.id;
+
+    const bulkAccepted = resolveAllAIReviewCandidates(
+      pending,
+      "interview-1",
+    );
+    expect(bulkAccepted.questions).toHaveLength(1);
+    expect(bulkAccepted.questions[0]?.linkedSyncBlockId).toBeNull();
+    expect(
+      bulkAccepted.aiReviews[0]?.candidates[0]?.syncDecision,
+    ).toBe("pending");
+    expect(bulkAccepted.interviews[0]?.status).toBe("pending");
+
+    expect(() =>
+      resolveAIReviewSync(
+        pending,
+        "interview-1",
+        candidateId,
+        "accepted",
+      ),
+    ).toThrow("请先采纳原子问答");
+
+    const ignoredLink = resolveAIReviewSync(
+      pending,
+      "interview-1",
+      candidateId,
+      "ignored",
+    );
+    expect(ignoredLink.questions).toHaveLength(0);
+    expect(
+      ignoredLink.aiReviews[0]?.candidates[0]?.questionDecision,
+    ).toBe("pending");
+    expect(ignoredLink.aiReviews[0]?.candidates[0]?.syncDecision).toBe(
+      "ignored",
+    );
+
+    const savedQuestion = resolveAIReviewQuestion(
+      ignoredLink,
+      "interview-1",
+      candidateId,
+      "accepted",
+    );
+    expect(savedQuestion.questions).toHaveLength(1);
+    expect(savedQuestion.questions[0]?.linkedSyncBlockId).toBeNull();
+    expect(savedQuestion.interviews[0]?.status).toBe("reviewed");
+
+    const acceptedQuestion = resolveAIReviewQuestion(
+      pending,
+      "interview-1",
+      candidateId,
+      "accepted",
+    );
+    expect(acceptedQuestion.interviews[0]?.status).toBe("pending");
+    const linked = resolveAIReviewSync(
+      acceptedQuestion,
+      "interview-1",
+      candidateId,
+      "accepted",
+    );
+    expect(linked.questions[0]?.linkedSyncBlockId).toBe(syncBlockId);
+    expect(linked.interviews[0]?.status).toBe("reviewed");
   });
 
   it("completes immediate AI review with explicit sync links only", () => {
@@ -368,7 +542,12 @@ describe("workspace domain", () => {
     expect(completed.interviews[0]?.status).toBe("reviewed");
     expect(completed.questions).toHaveLength(1);
     expect(completed.questions[0]?.linkedSyncBlockId).toBe(syncBlockId);
-    expect(completed.aiReviews[0]?.candidates[1]?.decision).toBe("ignored");
+    expect(
+      completed.aiReviews[0]?.candidates[1]?.questionDecision,
+    ).toBe("ignored");
+    expect(completed.aiReviews[0]?.candidates[0]?.syncDecision).toBe(
+      "accepted",
+    );
   });
 
   it("saves a completed mock interview before AI analysis", () => {
@@ -481,6 +660,7 @@ describe("workspace domain", () => {
         { length: questionCount },
         (_, index) => `${id}-question-${index}`,
       ),
+      favorite: false,
       pinned: false,
       hidden: false,
       createdAt: "2026-10-01T00:00:00.000Z",
@@ -504,29 +684,67 @@ describe("workspace domain", () => {
     ]);
   });
 
-  it("prioritizes pinned blocks and excludes hidden or reviewed-today blocks", () => {
+  it("searches sync blocks by title, body, or review notes", () => {
+    const makeSyncBlock = (
+      id: string,
+      title: string,
+      body: string,
+      reviewNotes: string,
+    ): SyncBlock => ({
+      id,
+      title,
+      body,
+      reviewNotes,
+      linkedQuestionIds: [],
+      favorite: false,
+      pinned: false,
+      hidden: false,
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    });
+    const syncBlocks = [
+      makeSyncBlock("title", "项目复盘", "正文", ""),
+      makeSyncBlock("body", "用户研究", "STAR FRAMEWORK", ""),
+      makeSyncBlock("notes", "商业分析", "正文", "补充竞品数据"),
+    ];
+
+    expect(searchSyncBlocks(syncBlocks, "项目").map((item) => item.id)).toEqual([
+      "title",
+    ]);
+    expect(searchSyncBlocks(syncBlocks, "star framework").map((item) => item.id)).toEqual([
+      "body",
+    ]);
+    expect(searchSyncBlocks(syncBlocks, "  竞品  ").map((item) => item.id)).toEqual([
+      "notes",
+    ]);
+    expect(searchSyncBlocks(syncBlocks, "  ")).toBe(syncBlocks);
+  });
+
+  it("returns visible favorite blocks ordered by linked question count", () => {
     const now = new Date().toISOString();
     const workspace: Workspace = {
       ...emptyWorkspace(),
       syncBlocks: [
         {
-          id: "normal",
-          title: "普通",
-          body: "普通",
+          id: "two-links",
+          title: "两个关联",
+          body: "两个关联",
           reviewNotes: "",
           linkedQuestionIds: ["q1", "q2"],
+          favorite: true,
           pinned: false,
           hidden: false,
           createdAt: now,
           updatedAt: now,
         },
         {
-          id: "pinned",
-          title: "置顶",
-          body: "置顶",
+          id: "three-links",
+          title: "三个关联",
+          body: "三个关联",
           reviewNotes: "",
-          linkedQuestionIds: [],
-          pinned: true,
+          linkedQuestionIds: ["q1", "q2", "q3"],
+          favorite: true,
+          pinned: false,
           hidden: false,
           createdAt: now,
           updatedAt: now,
@@ -536,38 +754,31 @@ describe("workspace domain", () => {
           title: "隐藏",
           body: "隐藏",
           reviewNotes: "",
-          linkedQuestionIds: ["q1", "q2", "q3"],
-          pinned: true,
+          linkedQuestionIds: ["q1", "q2", "q3", "q4"],
+          favorite: true,
+          pinned: false,
           hidden: true,
           createdAt: now,
           updatedAt: now,
         },
         {
-          id: "reviewed",
-          title: "今天已复习",
-          body: "今天已复习",
+          id: "not-favorite",
+          title: "未收藏",
+          body: "未收藏",
           reviewNotes: "",
-          linkedQuestionIds: ["q1"],
+          linkedQuestionIds: ["q1", "q2", "q3", "q4", "q5"],
+          favorite: false,
           pinned: false,
           hidden: false,
           createdAt: now,
           updatedAt: now,
         },
       ],
-      reviewEvents: [
-        {
-          id: "event-1",
-          syncBlockId: "reviewed",
-          result: "remembered",
-          reviewedAt: now,
-          nextReviewAt: null,
-        },
-      ],
     };
 
-    expect(getRecommendedSyncBlocks(workspace).map((item) => item.id)).toEqual([
-      "pinned",
-      "normal",
+    expect(getFavoriteSyncBlocks(workspace).map((item) => item.id)).toEqual([
+      "three-links",
+      "two-links",
     ]);
   });
 });

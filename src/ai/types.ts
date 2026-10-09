@@ -14,6 +14,7 @@ export interface AIProviderConfig {
 }
 
 export type AIProviderPresetId =
+  | "easycompute"
   | "kimi"
   | "openai"
   | "anthropic"
@@ -50,6 +51,13 @@ export interface AIExtractionInput {
   syncBlocks: SyncBlock[];
 }
 
+export interface AIExtractionProgress {
+  completed: number;
+  total: number;
+  phase: "extracting" | "retrying" | "splitting";
+  stage?: "inventory" | "coverage" | "answers" | "matching";
+}
+
 export interface AIMockInterviewTurnInput {
   session: MockInterviewSession;
   workspace: Workspace;
@@ -77,6 +85,7 @@ export interface AIClient {
     apiKey: string,
     input: AIExtractionInput,
     signal?: AbortSignal,
+    onProgress?: (progress: AIExtractionProgress) => void,
   ): Promise<AIExtractionCandidate[]>;
   continueMockInterview(
     config: AIProviderConfig,
@@ -99,6 +108,23 @@ export const defaultAIProviderConfig: AIProviderConfig = {
 };
 
 export const aiProviderPresets: AIProviderPreset[] = [
+  {
+    id: "easycompute",
+    label: "EasyCompute",
+    mark: "清",
+    description: "清华计算机系",
+    endpoint: "https://llmapi.paratera.com/v1",
+    model: "GLM-4-Flash",
+    models: [
+      "GLM-4-Flash",
+      "GLM-4-Long",
+      "MiniMax-Text-01",
+      "DeepSeek-V3",
+    ],
+    note: "通过清华 EasyCompute 入口申请 API Key。预设仅列出支持非流式文本对话的模型；实际可用范围以模型广场为准。",
+    docsUrl: "https://easycompute.cs.tsinghua.edu.cn/documents",
+    consoleUrl: "https://easycompute.cs.tsinghua.edu.cn/home",
+  },
   {
     id: "kimi",
     label: "Kimi",

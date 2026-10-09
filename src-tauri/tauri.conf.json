@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "千面",
-  "version": "1.0.0",
+  "productName": "见字·如面",
+  "version": "1.1.0",
   "identifier": "com.interviewatlas.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "千面",
+        "title": "见字·如面",
         "width": 1280,
         "height": 820,
         "minWidth": 960,
@@ -38,7 +38,8 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "13.0",
+      "minimumSystemVersion": "15.0",
+      "entitlements": "Entitlements.plist",
       "dmg": {
         "windowSize": {
           "width": 660,

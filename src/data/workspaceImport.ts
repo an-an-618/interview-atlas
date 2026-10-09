@@ -3,6 +3,7 @@ import type {
   AtomicQuestion,
   Interview,
   InterviewAIReview,
+  InterviewOrganization,
   MockInterviewFeedback,
   MockInterviewSession,
   ResumeExperience,
@@ -10,9 +11,10 @@ import type {
   SyncBlock,
   Workspace,
 } from "../domain/types";
+import { formatAnswer, migrateLegacyAnswer } from "../domain/answerFormat";
 
 export const MAX_WORKSPACE_IMPORT_BYTES = 25 * 1024 * 1024;
-const supportedFormatVersions = [1, 2, 3, 4, 5] as const;
+const supportedFormatVersions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
 type JsonRecord = Record<string, unknown>;
 type SupportedFormatVersion = (typeof supportedFormatVersions)[number];
@@ -192,6 +194,38 @@ function parseInterview(record: JsonRecord, path: string): Interview {
   };
 }
 
+function parseInterviewOrganization(
+  record: JsonRecord,
+  path: string,
+): InterviewOrganization {
+  return {
+    id: readNonEmptyString(record, "id", path),
+    title: readNonEmptyString(record, "title", path),
+    mode: readEnum(
+      record,
+      "mode",
+      ["company", "role", "round", "date", "tag", "custom"] as const,
+      path,
+    ),
+    collections: readObjectArray(
+      record,
+      "collections",
+      path,
+      (collection, collectionPath) => ({
+        id: readNonEmptyString(collection, "id", collectionPath),
+        label: readNonEmptyString(collection, "label", collectionPath),
+        interviewIds: readStringArray(
+          collection,
+          "interviewIds",
+          collectionPath,
+        ),
+      }),
+    ),
+    createdAt: readString(record, "createdAt", path),
+    updatedAt: readString(record, "updatedAt", path),
+  };
+}
+
 function parseQuestion(
   record: JsonRecord,
   path: string,
@@ -205,7 +239,10 @@ function parseQuestion(
   return {
     id: readNonEmptyString(record, "id", path),
     title: readString(record, "title", path),
-    answer: readString(record, "answer", path),
+    answer:
+      formatVersion < 8
+        ? migrateLegacyAnswer(readString(record, "answer", path))
+        : formatAnswer(readString(record, "answer", path)),
     notes,
     tags: readStringArray(record, "tags", path),
     sourceInterviewIds: readStringArray(
@@ -224,14 +261,25 @@ function parseQuestion(
   };
 }
 
-function parseSyncBlock(record: JsonRecord, path: string): SyncBlock {
+function parseSyncBlock(
+  record: JsonRecord,
+  path: string,
+  formatVersion: SupportedFormatVersion,
+): SyncBlock {
   const sample = readOptionalBoolean(record, "sample", path);
   return {
     id: readNonEmptyString(record, "id", path),
     title: readString(record, "title", path),
-    body: readString(record, "body", path),
+    body:
+      formatVersion < 9
+        ? migrateLegacyAnswer(readString(record, "body", path))
+        : formatAnswer(readString(record, "body", path)),
     reviewNotes: readString(record, "reviewNotes", path),
     linkedQuestionIds: readStringArray(record, "linkedQuestionIds", path),
+    favorite:
+      formatVersion >= 6
+        ? readBoolean(record, "favorite", path)
+        : readOptionalBoolean(record, "favorite", path) ?? false,
     pinned: readBoolean(record, "pinned", path),
     hidden: readBoolean(record, "hidden", path),
     createdAt: readString(record, "createdAt", path),
@@ -261,30 +309,58 @@ function parseResumeExperience(
 function parseCandidate(
   record: JsonRecord,
   path: string,
+  formatVersion: SupportedFormatVersion,
 ): AIReviewCandidate {
+  const suggestedSyncBlockId = readNullableString(
+    record,
+    "suggestedSyncBlockId",
+    path,
+  );
+  const legacyDecision =
+    formatVersion < 10
+      ? readEnum(
+          record,
+          "decision",
+          ["pending", "accepted", "ignored"] as const,
+          path,
+        )
+      : null;
   return {
     id: readNonEmptyString(record, "id", path),
     title: readString(record, "title", path),
-    answer: readString(record, "answer", path),
+    answer:
+      formatVersion < 8
+        ? migrateLegacyAnswer(readString(record, "answer", path))
+        : formatAnswer(readString(record, "answer", path)),
     tags: readStringArray(record, "tags", path),
     sourceExcerpt: readString(record, "sourceExcerpt", path),
-    suggestedSyncBlockId: readNullableString(
-      record,
-      "suggestedSyncBlockId",
-      path,
-    ),
+    suggestedSyncBlockId,
     matchReason: readString(record, "matchReason", path),
-    decision: readEnum(
-      record,
-      "decision",
-      ["pending", "accepted", "ignored"] as const,
-      path,
-    ),
-    connectToSuggested: readBoolean(
-      record,
-      "connectToSuggested",
-      path,
-    ),
+    questionDecision:
+      formatVersion >= 10
+        ? readEnum(
+            record,
+            "questionDecision",
+            ["pending", "accepted", "ignored"] as const,
+            path,
+          )
+        : legacyDecision!,
+    syncDecision:
+      formatVersion >= 10
+        ? readEnum(
+            record,
+            "syncDecision",
+            ["not_suggested", "pending", "accepted", "ignored"] as const,
+            path,
+          )
+        : !suggestedSyncBlockId
+          ? "not_suggested"
+          : legacyDecision === "pending"
+            ? "pending"
+            : legacyDecision === "accepted" &&
+                readBoolean(record, "connectToSuggested", path)
+              ? "accepted"
+              : "ignored",
     createdQuestionId: readNullableString(
       record,
       "createdQuestionId",
@@ -293,7 +369,11 @@ function parseCandidate(
   };
 }
 
-function parseAIReview(record: JsonRecord, path: string): InterviewAIReview {
+function parseAIReview(
+  record: JsonRecord,
+  path: string,
+  formatVersion: SupportedFormatVersion,
+): InterviewAIReview {
   return {
     id: readNonEmptyString(record, "id", path),
     interviewId: readNonEmptyString(record, "interviewId", path),
@@ -301,7 +381,8 @@ function parseAIReview(record: JsonRecord, path: string): InterviewAIReview {
       record,
       "candidates",
       path,
-      parseCandidate,
+      (candidate, candidatePath) =>
+        parseCandidate(candidate, candidatePath, formatVersion),
     ),
     createdAt: readString(record, "createdAt", path),
     updatedAt: readString(record, "updatedAt", path),
@@ -440,6 +521,10 @@ function assertReferences(
 
 function validateRelationships(workspace: Workspace): void {
   assertUnique(workspace.interviews.map((item) => item.id), "interviews");
+  assertUnique(
+    workspace.interviewOrganizations.map((item) => item.id),
+    "interviewOrganizations",
+  );
   assertUnique(workspace.questions.map((item) => item.id), "questions");
   assertUnique(workspace.syncBlocks.map((item) => item.id), "syncBlocks");
   assertUnique(
@@ -478,6 +563,20 @@ function validateRelationships(workspace: Workspace): void {
       if (!question?.sourceInterviewIds.includes(interview.id)) {
         fail(path, `与原子问答 "${questionId}" 的来源关系不一致。`);
       }
+    });
+  });
+
+  workspace.interviewOrganizations.forEach((organization, index) => {
+    assertUnique(
+      organization.collections.map((collection) => collection.id),
+      `interviewOrganizations[${index}].collections`,
+    );
+    organization.collections.forEach((collection, collectionIndex) => {
+      assertReferences(
+        collection.interviewIds,
+        interviewIds,
+        `interviewOrganizations[${index}].collections[${collectionIndex}].interviewIds`,
+      );
     });
   });
 
@@ -561,6 +660,31 @@ function validateRelationships(workspace: Workspace): void {
           `${path}.createdQuestionId`,
           `引用了不存在的 ID "${candidate.createdQuestionId}"。`,
         );
+      }
+      if (
+        (candidate.suggestedSyncBlockId === null) !==
+        (candidate.syncDecision === "not_suggested")
+      ) {
+        fail(`${path}.syncDecision`, "与同步块建议状态不一致。");
+      }
+      if (
+        candidate.syncDecision === "accepted" &&
+        candidate.questionDecision !== "accepted"
+      ) {
+        fail(`${path}.syncDecision`, "采纳关联前必须先采纳原子问答。");
+      }
+      if (
+        candidate.questionDecision === "ignored" &&
+        candidate.syncDecision !== "ignored" &&
+        candidate.syncDecision !== "not_suggested"
+      ) {
+        fail(`${path}.syncDecision`, "忽略问答后不能保留待处理关联。");
+      }
+      if (
+        (candidate.questionDecision === "accepted") !==
+        Boolean(candidate.createdQuestionId)
+      ) {
+        fail(`${path}.createdQuestionId`, "与原子问答采纳状态不一致。");
       }
     });
   });
@@ -646,7 +770,7 @@ export function parseWorkspaceExport(text: string): ParsedWorkspaceExport {
         ? String(record.formatVersion)
         : "缺失";
     throw new WorkspaceImportError(
-      `不支持格式版本 ${version}，当前支持版本 1 至 5。`,
+      `不支持格式版本 ${version}，当前支持版本 1 至 10。`,
     );
   }
   const formatVersion = record.formatVersion as SupportedFormatVersion;
@@ -663,6 +787,15 @@ export function parseWorkspaceExport(text: string): ParsedWorkspaceExport {
       "根节点",
       parseInterview,
     ),
+    interviewOrganizations:
+      formatVersion >= 7
+        ? readObjectArray(
+            record,
+            "interviewOrganizations",
+            "根节点",
+            parseInterviewOrganization,
+          )
+        : [],
     questions: readObjectArray(
       record,
       "questions",
@@ -673,7 +806,7 @@ export function parseWorkspaceExport(text: string): ParsedWorkspaceExport {
       record,
       "syncBlocks",
       "根节点",
-      parseSyncBlock,
+      (item, path) => parseSyncBlock(item, path, formatVersion),
     ),
     resumeExperiences:
       formatVersion >= 4
@@ -691,8 +824,18 @@ export function parseWorkspaceExport(text: string): ParsedWorkspaceExport {
           ),
     aiReviews:
       formatVersion >= 4
-        ? readObjectArray(record, "aiReviews", "根节点", parseAIReview)
-        : readLegacyObjectArray(record, "aiReviews", "根节点", parseAIReview),
+        ? readObjectArray(
+            record,
+            "aiReviews",
+            "根节点",
+            (item, path) => parseAIReview(item, path, formatVersion),
+          )
+        : readLegacyObjectArray(
+            record,
+            "aiReviews",
+            "根节点",
+            (item, path) => parseAIReview(item, path, formatVersion),
+          ),
     reviewEvents: readObjectArray(
       record,
       "reviewEvents",

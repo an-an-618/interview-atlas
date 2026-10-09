@@ -8,6 +8,7 @@ import {
 describe("AI provider presets", () => {
   it("defines the supported official providers with complete connection data", () => {
     expect(aiProviderPresets.map((preset) => preset.id)).toEqual([
+      "easycompute",
       "kimi",
       "openai",
       "anthropic",
@@ -33,6 +34,12 @@ describe("AI provider presets", () => {
     };
 
     expect(matchAIProviderPreset(config)?.id).toBe("kimi");
+    expect(
+      matchAIProviderPreset({
+        ...config,
+        endpoint: "https://llmapi.paratera.com/v1/",
+      })?.id,
+    ).toBe("easycompute");
     expect(
       matchAIProviderPreset({
         ...config,

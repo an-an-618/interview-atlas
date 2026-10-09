@@ -47,9 +47,10 @@ All three projects are maintained by GitHub under the MIT license. The workflow 
 Tauri 2.12.0 is approved by [ADR 0004](../adr/0004-macos-tauri-wrapper.md) and [ADR 0005](../adr/0005-windows-desktop-distribution.md) for the macOS and Windows desktop shell. The project is maintained by the Tauri Programme within the Commons Conservancy and is licensed under Apache-2.0 or MIT.
 
 - Capability: native macOS and Windows application windows with `.app`, `.dmg`, NSIS, and MSI packaging around the existing Vite output.
-- Reviewed packages: `@tauri-apps/cli@2.12.0`, `tauri@2.12.0`, and `tauri-build@2.7.0`.
+- Reviewed packages: `@tauri-apps/cli@2.12.0`, `tauri@2.12.0`, `tauri-build@2.7.0`, and the official `@tauri-apps/plugin-opener@2.7.0` / `tauri-plugin-opener@2.7.0` bindings.
+- Opener permission: `opener:default` delegates only `http:`, `https:`, `mailto:`, and `tel:` links to the operating system's default application. It does not allow arbitrary commands or file paths.
 - Install behavior: npm installs the platform-specific CLI package; Cargo downloads and compiles pinned Rust dependencies. Windows packaging may also download the NSIS/WiX toolchain and the WebView2 bootstrapper.
 - Subprocess and filesystem access: the CLI invokes Cargo and native platform bundle utilities; generated files stay under `src-tauri/target/`.
 - Network behavior: package installation contacts the configured npm and Cargo registries. The desktop runtime adds no telemetry or product backend.
-- Credentials: unsigned local builds require none. Future signing and notarization credentials must be supplied only through a reviewed release environment.
+- Credentials: unsigned local builds require none. The opener plugin receives only the selected URL and cannot access AI credentials or workspace data. Future signing and notarization credentials must be supplied only through a reviewed release environment.
 - Rollback: remove `src-tauri/`, the desktop npm scripts, and `@tauri-apps/cli`.

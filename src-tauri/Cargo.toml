@@ -1,6 +1,6 @@
 [package]
 name = "interview-atlas"
-version = "1.0.0"
+version = "1.1.0"
 description = "Local-first interview knowledge workspace"
 authors = ["Interview Atlas contributors"]
 license = ""
@@ -19,3 +19,18 @@ tauri-build = { version = "=2.7.0", features = [] }
 
 [dependencies]
 tauri = { version = "=2.12.0", features = [] }
+tauri-plugin-opener = "=2.7.0"
+base64 = "0.22"
+chrono = "0.4"
+hound = "3.5"
+hmac = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha1 = "0.10"
+tokio = { version = "1", features = ["fs", "macros", "time"] }
+tokio-util = { version = "0.7", features = ["io"] }
+url = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+screencapturekit = { version = "11", features = ["macos_15_0"] }

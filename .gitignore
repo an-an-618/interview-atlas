@@ -41,4 +41,10 @@ Thumbs.db
 .agents/
 .artifacts/
 .chrome-*/
+.tools/
 .tooling/
+.local-macos-signing/
+.dbg/
+.tmp-rust-toolchain/
+debug-long-interview-failure.md
+debug-extraction-evidence-mismatch.md

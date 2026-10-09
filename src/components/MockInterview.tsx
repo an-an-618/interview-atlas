@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   CircleStop,
+  DoorOpen,
   FileText,
   History,
   LoaderCircle,
@@ -28,6 +29,8 @@ import {
 import {
   DEFAULT_MOCK_INTERVIEWER_PROMPT,
 } from "../ai/openAICompatibleClient";
+import mockInterviewScene from "../assets/mock-interview-scene.png";
+import mockInterviewer from "../assets/mock-interviewer.png";
 import type {
   AIClient,
   AIProviderConfig,
@@ -44,6 +47,7 @@ import type {
 interface MockInterviewPageProps {
   workspace: Workspace;
   focusedId: string | null;
+  initialLobbyView?: "home" | "setup";
   configured: boolean;
   config: AIProviderConfig;
   apiKey: string;
@@ -89,6 +93,7 @@ function providerHost(endpoint: string): string {
 function MockInterviewLobby({
   workspace,
   sessions,
+  initialView,
   configured,
   config,
   onStart,
@@ -97,6 +102,7 @@ function MockInterviewLobby({
 }: {
   workspace: Workspace;
   sessions: MockInterviewSession[];
+  initialView: "home" | "setup";
   configured: boolean;
   config: AIProviderConfig;
   onStart: (input: CreateMockInterviewInput) => Promise<void>;
@@ -111,6 +117,9 @@ function MockInterviewLobby({
   const [targetQuestionCount, setTargetQuestionCount] = useState(8);
   const [interviewerPrompt, setInterviewerPrompt] = useState(
     DEFAULT_MOCK_INTERVIEWER_PROMPT,
+  );
+  const [lobbyView, setLobbyView] = useState<"home" | "setup" | "history">(
+    initialView,
   );
   const [promptOpen, setPromptOpen] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -161,268 +170,338 @@ function MockInterviewLobby({
     }
   };
 
+  if (lobbyView === "home") {
+    return (
+      <div className="page mock-interview-lobby mock-lobby-home">
+        <header className="mock-lobby-header">
+          <div>
+            <p className="eyebrow">AI Mock Interview</p>
+            <h1>
+              你的面试私教<span>，在线模拟</span>
+            </h1>
+            <p>
+              面试官会参考本地知识库中的相关记录、简历经历与高频问题。回答过程只推进面试，反馈统一在结束后生成。
+            </p>
+          </div>
+          <img
+            className="mock-lobby-scene"
+            src={mockInterviewScene}
+            alt="面试官与候选人进行模拟面试"
+          />
+        </header>
+
+        <section className="mock-entry-actions" aria-label="模拟面试入口">
+          <button
+            className="mock-entry-action primary"
+            type="button"
+            onClick={() => setLobbyView("setup")}
+          >
+            <DoorOpen size={20} aria-hidden="true" />
+            <span>进入面试间</span>
+            <ChevronRight size={17} aria-hidden="true" />
+          </button>
+          <button
+            className="mock-entry-action secondary"
+            type="button"
+            onClick={() => setLobbyView("history")}
+          >
+            <History size={20} aria-hidden="true" />
+            <span>查看历史模拟</span>
+            <ChevronRight size={17} aria-hidden="true" />
+          </button>
+        </section>
+      </div>
+    );
+  }
+
+  if (lobbyView === "history") {
+    return (
+      <div className="page mock-interview-lobby mock-history-page">
+        <button
+          className="back-button mock-lobby-back"
+          type="button"
+          onClick={() => setLobbyView("home")}
+        >
+          <ArrowLeft size={16} aria-hidden="true" />
+          返回模拟面试
+        </button>
+        <header className="mock-subpage-header">
+          <div>
+            <p className="eyebrow">Interview Archive</p>
+            <h1>历史模拟</h1>
+            <p>回看已完成的模拟面试、逐字稿与反馈报告。</p>
+          </div>
+          <span>{sessions.length} 场记录</span>
+        </header>
+
+        {sessions.length ? (
+          <div className="mock-history-list full">
+            {sessions.map((session) => (
+              <button
+                type="button"
+                key={session.id}
+                onClick={() => onFocus(session.id)}
+              >
+                <span className="mock-history-state">
+                  {session.status === "active" ? "进行中" : "已结束"}
+                </span>
+                <strong>{session.company}</strong>
+                <span>{session.role}</span>
+                <small>
+                  {formatSessionDate(session.startedAt)} ·{" "}
+                  {
+                    session.messages.filter(
+                      (message) => message.role === "candidate",
+                    ).length
+                  }{" "}
+                  次回答
+                </small>
+                <ChevronRight size={15} aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="mock-history-empty full">
+            <MessageSquareText size={28} strokeWidth={1.3} aria-hidden="true" />
+            <h2>还没有历史模拟</h2>
+            <p>完成的模拟面试会保留在这里。</p>
+            <button
+              className="button primary"
+              type="button"
+              onClick={() => setLobbyView("setup")}
+            >
+              <DoorOpen size={16} aria-hidden="true" />
+              进入面试间
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="page mock-interview-lobby">
-      <header className="mock-lobby-header">
+    <div className="page mock-interview-lobby mock-setup-page">
+      <button
+        className="back-button mock-lobby-back"
+        type="button"
+        onClick={() => setLobbyView("home")}
+      >
+        <ArrowLeft size={16} aria-hidden="true" />
+        返回模拟面试
+      </button>
+
+      <header className="mock-setup-intro">
+        <img src={mockInterviewer} alt="模拟面试官" />
         <div>
-          <p className="eyebrow">AI Mock Interview</p>
-          <h1>
-            你的面试私教<span>，在线模拟</span>
-          </h1>
-          <p>
-            面试官会参考本地知识库中的相关记录、简历经历与高频问题。回答过程只推进面试，反馈统一在结束后生成。
-          </p>
+          <p className="eyebrow">Your Interviewer</p>
+          <h1>面试官已就位</h1>
+          <p>确认本次面试信息，面试官会据此调整轮次、重点和追问方式。</p>
         </div>
-        <MessageSquareText size={44} strokeWidth={1.2} aria-hidden="true" />
       </header>
 
-      <div className="mock-lobby-layout">
-        <form className="mock-setup" onSubmit={submit}>
-          <div className="mock-section-heading">
-            <span>01</span>
-            <div>
-              <h2>本次面试</h2>
-              <p>公司和岗位用于匹配知识库中的历史风格与轮次。</p>
-            </div>
+      <form className="mock-setup" onSubmit={submit}>
+        <div className="mock-section-heading">
+          <span>01</span>
+          <div>
+            <h2>本次面试</h2>
+            <p>公司和岗位用于匹配知识库中的历史风格与轮次。</p>
           </div>
+        </div>
 
-          <div className="mock-setup-grid">
-            <label>
-              <span>公司</span>
-              <span className="mock-input-with-icon">
-                <Building2 size={15} aria-hidden="true" />
-                <input
-                  value={company}
-                  onChange={(event) => setCompany(event.target.value)}
-                  placeholder="例如：字节跳动"
-                  maxLength={120}
-                  required
-                />
-              </span>
-            </label>
-            <label>
-              <span>岗位名称</span>
-              <span className="mock-input-with-icon">
-                <BriefcaseBusiness size={15} aria-hidden="true" />
-                <input
-                  value={role}
-                  onChange={(event) => setRole(event.target.value)}
-                  placeholder="例如：AI 产品经理"
-                  maxLength={120}
-                  required
-                />
-              </span>
-            </label>
-            <label>
-              <span>目标轮次</span>
+        <div className="mock-setup-grid">
+          <label>
+            <span>公司</span>
+            <span className="mock-input-with-icon">
+              <Building2 size={15} aria-hidden="true" />
               <input
-                value={round}
-                onChange={(event) => setRound(event.target.value)}
-                placeholder="留空则根据历史记录推断"
-                maxLength={80}
+                value={company}
+                onChange={(event) => setCompany(event.target.value)}
+                placeholder="例如：字节跳动"
+                maxLength={120}
+                required
               />
-            </label>
-            <label>
-              <span>目标问题数</span>
-              <select
-                value={targetQuestionCount}
-                onChange={(event) =>
-                  setTargetQuestionCount(Number(event.target.value))
+            </span>
+          </label>
+          <label>
+            <span>岗位名称</span>
+            <span className="mock-input-with-icon">
+              <BriefcaseBusiness size={15} aria-hidden="true" />
+              <input
+                value={role}
+                onChange={(event) => setRole(event.target.value)}
+                placeholder="例如：AI 产品经理"
+                maxLength={120}
+                required
+              />
+            </span>
+          </label>
+          <label>
+            <span>目标轮次</span>
+            <input
+              value={round}
+              onChange={(event) => setRound(event.target.value)}
+              placeholder="留空则根据历史记录推断"
+              maxLength={80}
+            />
+          </label>
+          <label>
+            <span>目标问题数</span>
+            <select
+              value={targetQuestionCount}
+              onChange={(event) =>
+                setTargetQuestionCount(Number(event.target.value))
+              }
+            >
+              <option value={6}>6 题 · 快速</option>
+              <option value={8}>8 题 · 标准</option>
+              <option value={12}>12 题 · 深入</option>
+            </select>
+          </label>
+        </div>
+
+        <label>
+          <span>岗位 JD</span>
+          <textarea
+            value={jobDescription}
+            onChange={(event) => setJobDescription(event.target.value)}
+            placeholder="粘贴岗位职责和要求，面试官会据此调整考察重点。"
+            maxLength={20000}
+            rows={6}
+          />
+        </label>
+        <label>
+          <span>其他补充信息</span>
+          <textarea
+            value={additionalInfo}
+            onChange={(event) => setAdditionalInfo(event.target.value)}
+            placeholder="例如：希望重点考察 Agent 策略、这是业务二面、避免纯算法题。"
+            maxLength={8000}
+            rows={3}
+          />
+        </label>
+
+        <section className="mock-context-preview">
+          <header>
+            <BookOpen size={17} aria-hidden="true" />
+            <div>
+              <strong>知识库联动</strong>
+              <small>
+                {matchingRoleCount
+                  ? `找到 ${matchingRoleCount} 场同公司同岗位记录，将优先学习其轮次与追问风格。`
+                  : matchingCompanyCount
+                    ? `找到 ${matchingCompanyCount} 场同公司记录，将参考公司面试风格。`
+                    : "暂无同公司历史记录，将从简历、问答和同步块中选择素材。"}
+              </small>
+            </div>
+          </header>
+          <dl>
+            <div>
+              <dt>面试记录</dt>
+              <dd>{workspace.interviews.length}</dd>
+            </div>
+            <div>
+              <dt>简历经历</dt>
+              <dd>{workspace.resumeExperiences.length}</dd>
+            </div>
+            <div>
+              <dt>原子问答</dt>
+              <dd>{workspace.questions.length}</dd>
+            </div>
+            <div>
+              <dt>同步块</dt>
+              <dd>{workspace.syncBlocks.length}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className={`mock-prompt-editor${promptOpen ? " open" : ""}`}>
+          <button
+            type="button"
+            aria-expanded={promptOpen}
+            onClick={() => setPromptOpen((current) => !current)}
+          >
+            <span>
+              <Sparkles size={16} aria-hidden="true" />
+              <strong>面试官 System Prompt</strong>
+              <small>
+                可编辑面试风格与考察重点；结束、输出和报告流程不可修改。
+              </small>
+            </span>
+            <ChevronDown size={17} aria-hidden="true" />
+          </button>
+          {promptOpen ? (
+            <div>
+              <textarea
+                value={interviewerPrompt}
+                onChange={(event) => setInterviewerPrompt(event.target.value)}
+                maxLength={30000}
+                rows={12}
+                aria-label="可编辑的面试官 System Prompt"
+              />
+              <button
+                className="text-button"
+                type="button"
+                onClick={() =>
+                  setInterviewerPrompt(DEFAULT_MOCK_INTERVIEWER_PROMPT)
                 }
               >
-                <option value={6}>6 题 · 快速</option>
-                <option value={8}>8 题 · 标准</option>
-                <option value={12}>12 题 · 深入</option>
-              </select>
-            </label>
-          </div>
-
-          <label>
-            <span>岗位 JD</span>
-            <textarea
-              value={jobDescription}
-              onChange={(event) => setJobDescription(event.target.value)}
-              placeholder="粘贴岗位职责和要求，面试官会据此调整考察重点。"
-              maxLength={20000}
-              rows={6}
-            />
-          </label>
-          <label>
-            <span>其他补充信息</span>
-            <textarea
-              value={additionalInfo}
-              onChange={(event) => setAdditionalInfo(event.target.value)}
-              placeholder="例如：希望重点考察 Agent 策略、这是业务二面、避免纯算法题。"
-              maxLength={8000}
-              rows={3}
-            />
-          </label>
-
-          <section className="mock-context-preview">
-            <header>
-              <BookOpen size={17} aria-hidden="true" />
-              <div>
-                <strong>知识库联动</strong>
-                <small>
-                  {matchingRoleCount
-                    ? `找到 ${matchingRoleCount} 场同公司同岗位记录，将优先学习其轮次与追问风格。`
-                    : matchingCompanyCount
-                      ? `找到 ${matchingCompanyCount} 场同公司记录，将参考公司面试风格。`
-                      : "暂无同公司历史记录，将从简历、问答和同步块中选择素材。"}
-                </small>
-              </div>
-            </header>
-            <dl>
-              <div>
-                <dt>面试记录</dt>
-                <dd>{workspace.interviews.length}</dd>
-              </div>
-              <div>
-                <dt>简历经历</dt>
-                <dd>{workspace.resumeExperiences.length}</dd>
-              </div>
-              <div>
-                <dt>原子问答</dt>
-                <dd>{workspace.questions.length}</dd>
-              </div>
-              <div>
-                <dt>同步块</dt>
-                <dd>{workspace.syncBlocks.length}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section className={`mock-prompt-editor${promptOpen ? " open" : ""}`}>
-            <button
-              type="button"
-              aria-expanded={promptOpen}
-              onClick={() => setPromptOpen((current) => !current)}
-            >
-              <span>
-                <Sparkles size={16} aria-hidden="true" />
-                <strong>面试官 System Prompt</strong>
-                <small>
-                  可编辑面试风格与考察重点；结束、输出和报告流程不可修改。
-                </small>
-              </span>
-              <ChevronDown size={17} aria-hidden="true" />
-            </button>
-            {promptOpen ? (
-              <div>
-                <textarea
-                  value={interviewerPrompt}
-                  onChange={(event) => setInterviewerPrompt(event.target.value)}
-                  maxLength={30000}
-                  rows={12}
-                  aria-label="可编辑的面试官 System Prompt"
-                />
-                <button
-                  className="text-button"
-                  type="button"
-                  onClick={() =>
-                    setInterviewerPrompt(DEFAULT_MOCK_INTERVIEWER_PROMPT)
-                  }
-                >
-                  <RotateCcw size={13} aria-hidden="true" />
-                  恢复默认
-                </button>
-              </div>
-            ) : null}
-          </section>
-
-          <footer className="mock-setup-footer">
-            <div>
-              {configured ? (
-                <>
-                  <CheckCircle2 size={15} aria-hidden="true" />
-                  <span>
-                    将请求 {providerHost(config.endpoint)} · {config.model}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Settings size={15} aria-hidden="true" />
-                  <span>开始前需要配置 AI 服务</span>
-                </>
-              )}
+                <RotateCcw size={13} aria-hidden="true" />
+                恢复默认
+              </button>
             </div>
-            {configured ? (
-              <button
-                className="button primary"
-                type="submit"
-                disabled={starting || !company.trim() || !role.trim()}
-              >
-                {starting ? (
-                  <LoaderCircle className="spin" size={16} aria-hidden="true" />
-                ) : (
-                  <MessageSquareText size={16} aria-hidden="true" />
-                )}
-                {starting ? "正在生成第一问" : "开始模拟面试"}
-              </button>
-            ) : (
-              <button
-                className="button primary"
-                type="button"
-                onClick={onOpenSettings}
-              >
-                <Settings size={16} aria-hidden="true" />
-                配置 AI 服务
-              </button>
-            )}
-          </footer>
-          <p className="mock-data-note">
-            发起请求时会发送上述输入，以及最多 6 场相关历史面试、36
-            条问答、24 个同步块和 16 条简历经历；API Key 仍只保留在当前会话。
-          </p>
-          {error ? (
-            <p className="mock-inline-error" role="alert">
-              {error}
-            </p>
           ) : null}
-        </form>
+        </section>
 
-        <aside className="mock-history">
-          <div className="mock-section-heading compact">
-            <History size={18} aria-hidden="true" />
-            <div>
-              <h2>历史模拟</h2>
-              <p>{sessions.length} 场记录</p>
-            </div>
+        <footer className="mock-setup-footer">
+          <div>
+            {configured ? (
+              <>
+                <CheckCircle2 size={15} aria-hidden="true" />
+                <span>
+                  将请求 {providerHost(config.endpoint)} · {config.model}
+                </span>
+              </>
+            ) : (
+              <>
+                <Settings size={15} aria-hidden="true" />
+                <span>开始前需要配置 AI 服务</span>
+              </>
+            )}
           </div>
-          {sessions.length ? (
-            <div className="mock-history-list">
-              {sessions.map((session) => (
-                <button
-                  type="button"
-                  key={session.id}
-                  onClick={() => onFocus(session.id)}
-                >
-                  <span className="mock-history-state">
-                    {session.status === "active" ? "进行中" : "已结束"}
-                  </span>
-                  <strong>{session.company}</strong>
-                  <span>{session.role}</span>
-                  <small>
-                    {formatSessionDate(session.startedAt)} ·{" "}
-                    {
-                      session.messages.filter(
-                        (message) => message.role === "candidate",
-                      ).length
-                    }{" "}
-                    次回答
-                  </small>
-                  <ChevronRight size={15} aria-hidden="true" />
-                </button>
-              ))}
-            </div>
+          {configured ? (
+            <button
+              className="button primary"
+              type="submit"
+              disabled={starting || !company.trim() || !role.trim()}
+            >
+              {starting ? (
+                <LoaderCircle className="spin" size={16} aria-hidden="true" />
+              ) : (
+                <MessageSquareText size={16} aria-hidden="true" />
+              )}
+              {starting ? "正在生成第一问" : "开始模拟面试"}
+            </button>
           ) : (
-            <div className="mock-history-empty">
-              <MessageSquareText size={24} strokeWidth={1.3} aria-hidden="true" />
-              <p>完成的模拟面试会保留在这里。</p>
-            </div>
+            <button
+              className="button primary"
+              type="button"
+              onClick={onOpenSettings}
+            >
+              <Settings size={16} aria-hidden="true" />
+              配置 AI 服务
+            </button>
           )}
-        </aside>
-      </div>
+        </footer>
+        <p className="mock-data-note">
+          发起请求时会发送上述输入，以及最多 6 场相关历史面试、36
+          条问答、24 个同步块和 16 条简历经历；API Key 仍只保留在当前会话。
+        </p>
+        {error ? (
+          <p className="mock-inline-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </form>
     </div>
   );
 }
@@ -517,7 +596,11 @@ function MockInterviewChat({
             key={message.id}
           >
             <div className="mock-message-avatar" aria-hidden="true">
-              {message.role === "interviewer" ? "AI" : "我"}
+              {message.role === "interviewer" ? (
+                <img src={mockInterviewer} alt="" />
+              ) : (
+                "我"
+              )}
             </div>
             <div>
               <header>
@@ -783,6 +866,7 @@ function MockInterviewReport({
 export function MockInterviewPage({
   workspace,
   focusedId,
+  initialLobbyView = "home",
   configured,
   config,
   apiKey,
@@ -944,8 +1028,10 @@ export function MockInterviewPage({
   if (!session) {
     return (
       <MockInterviewLobby
+        key={initialLobbyView}
         workspace={workspace}
         sessions={sessions}
+        initialView={initialLobbyView}
         configured={configured}
         config={config}
         onStart={start}
