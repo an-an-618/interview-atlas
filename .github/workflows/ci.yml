@@ -18,7 +18,7 @@ jobs:
   validate:
     name: Web and macOS package
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 40
     env:
       MACOSX_DEPLOYMENT_TARGET: "15.0"
 
