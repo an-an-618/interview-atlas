@@ -45,7 +45,7 @@ export function extractionProgressLabel(progress: AIExtractionProgress | null) {
   if (progress.stage === "inventory") return "正在通读全文，识别面试问题…";
   if (progress.stage === "coverage") return "正在复查全文中的遗漏问题…";
   if (progress.stage === "answers") return "正在整理每个问题的当次回答…";
-  if (progress.stage === "matching") return "正在查找可关联的同步块…";
+  if (progress.stage === "matching") return "正在查找可关联的聚合块…";
   return "正在解析面经…";
 }
 
@@ -711,7 +711,7 @@ export function InterviewImportPage({
               <p>
                 {error
                   ? error
-                  : "正在识别候选问题、实例回答，并匹配已有同步块。"}
+                  : "正在识别候选问题、实例回答，并匹配已有聚合块。"}
               </p>
               {error ? <p>原文草稿已保存在本地，可以稍后从面试记录重新拆解。</p> : null}
               {!error ? (
@@ -742,7 +742,7 @@ export function InterviewImportPage({
                 </span>
                 <span>
                   <strong>{matchCount}</strong>
-                  匹配到同步块
+                  匹配到聚合块
                 </span>
                 <span>
                   <strong>{candidates.length - matchCount}</strong>

@@ -188,7 +188,7 @@ describe("workspace backup import", () => {
     legacy.formatVersion = 8;
     const syncBlocks = legacy.syncBlocks as Array<Record<string, unknown>>;
     const body =
-      "我先明确同步块要覆盖的稳定问题和适用边界。接着整理跨面试都成立的核心结论，并保留必要的事实与例子。正文还需要说明方案选择、关键约束和可以复用的判断依据。最后关联原子问答持续校正正文，避免单次回答覆盖稳定知识。";
+      "我先明确聚合块要覆盖的稳定问题和适用边界。接着整理跨面试都成立的核心结论，并保留必要的事实与例子。正文还需要说明方案选择、关键约束和可以复用的判断依据。最后关联原子问答持续校正正文，避免单次回答覆盖稳定知识。";
     syncBlocks[0]!.body = body;
 
     const parsed = parseWorkspaceExport(serialize(legacy));

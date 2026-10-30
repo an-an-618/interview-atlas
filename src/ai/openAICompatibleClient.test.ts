@@ -86,7 +86,7 @@ describe("OpenAI-compatible client", () => {
       "核心主题、提问意图、回答范围和关键约束上均高度一致",
     );
     expect(INTERVIEW_MATCH_SYSTEM_PROMPT).toContain(
-      "多个同步块都可能匹配",
+      "多个聚合块都可能匹配",
     );
     expect(INTERVIEW_MATCH_SYSTEM_PROMPT).toContain(
       "matchReason 必须使用简体中文",

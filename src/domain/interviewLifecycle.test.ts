@@ -30,7 +30,7 @@ function fixture() {
   const question = accepted.questions[0]!;
   const independent = addStandaloneQuestion(accepted, { title: "独立问题", answer: "保留", tags: [] });
   const sync = addSyncBlock(independent.workspace, {
-    title: "同步块", body: "稳定回答", reviewNotes: "复习笔记",
+    title: "聚合块", body: "稳定回答", reviewNotes: "复习笔记",
     questionIds: [question.id, independent.question.id], resumeExperienceIds: [],
   });
   const resume = addResumeExperience(sync.workspace, {

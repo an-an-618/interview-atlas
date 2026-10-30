@@ -115,10 +115,10 @@ describe("workspace domain", () => {
     expect(cleared.syncBlock.body).toBe("第一段\n第二段");
     expect(() =>
       updateSyncBlock(result.workspace, created.syncBlock.id, { title: "  " }),
-    ).toThrow("同步块标题不能为空");
+    ).toThrow("聚合块标题不能为空");
     expect(() =>
       updateSyncBlock(result.workspace, "missing", { title: "新标题" }),
-    ).toThrow("同步块不存在");
+    ).toThrow("聚合块不存在");
 
     const favorited = updateSyncBlock(
       result.workspace,

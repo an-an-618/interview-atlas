@@ -99,7 +99,7 @@ export function WorkspaceMigration({
         ["面试记录", preview.backup.workspace.interviews.length],
         ["整理方案", preview.backup.workspace.interviewOrganizations.length],
         ["原子问答", preview.backup.workspace.questions.length],
-        ["同步块", preview.backup.workspace.syncBlocks.length],
+        ["聚合块", preview.backup.workspace.syncBlocks.length],
         ["简历经历", preview.backup.workspace.resumeExperiences.length],
         ["AI 审核", preview.backup.workspace.aiReviews.length],
         ["复习记录", preview.backup.workspace.reviewEvents.length],

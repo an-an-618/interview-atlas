@@ -600,7 +600,7 @@ function validateRelationships(workspace: Workspace): void {
       if (!syncBlock.linkedQuestionIds.includes(question.id)) {
         fail(
           `questions[${index}].linkedSyncBlockId`,
-          `与同步块 "${syncBlock.id}" 的问答关系不一致。`,
+          `与聚合块 "${syncBlock.id}" 的问答关系不一致。`,
         );
       }
     }
@@ -612,7 +612,7 @@ function validateRelationships(workspace: Workspace): void {
     syncBlock.linkedQuestionIds.forEach((questionId) => {
       const question = questionsById.get(questionId);
       if (question?.linkedSyncBlockId !== syncBlock.id) {
-        fail(path, `与原子问答 "${questionId}" 的同步块关系不一致。`);
+        fail(path, `与原子问答 "${questionId}" 的聚合块关系不一致。`);
       }
     });
   });
@@ -665,7 +665,7 @@ function validateRelationships(workspace: Workspace): void {
         (candidate.suggestedSyncBlockId === null) !==
         (candidate.syncDecision === "not_suggested")
       ) {
-        fail(`${path}.syncDecision`, "与同步块建议状态不一致。");
+        fail(`${path}.syncDecision`, "与聚合块建议状态不一致。");
       }
       if (
         candidate.syncDecision === "accepted" &&

@@ -1,3 +1,4 @@
+import { normalizeSearchText } from "./searchText";
 import type {
   AIReviewCandidate,
   AtomicQuestion,
@@ -496,7 +497,7 @@ export function resolveAIReviewSync(
   if (!review || !candidate) throw new Error("AI review candidate not found");
   if (candidate.syncDecision !== "pending") return workspace;
   if (!candidate.suggestedSyncBlockId) {
-    throw new Error("该候选没有同步块关联建议");
+    throw new Error("该候选没有聚合块关联建议");
   }
 
   let next = workspace;
@@ -505,14 +506,14 @@ export function resolveAIReviewSync(
       candidate.questionDecision !== "accepted" ||
       !candidate.createdQuestionId
     ) {
-      throw new Error("请先采纳原子问答，再采纳同步块关联建议");
+      throw new Error("请先采纳原子问答，再采纳聚合块关联建议");
     }
     if (
       !workspace.syncBlocks.some(
         (item) => item.id === candidate.suggestedSyncBlockId,
       )
     ) {
-      throw new Error("建议关联的同步块不存在");
+      throw new Error("建议关联的聚合块不存在");
     }
     next = linkQuestionToSyncBlock(
       workspace,
@@ -1022,9 +1023,9 @@ export function updateSyncBlock(
   input: UpdateSyncBlockInput,
 ): { workspace: Workspace; syncBlock: SyncBlock } {
   const existing = workspace.syncBlocks.find((item) => item.id === syncBlockId);
-  if (!existing) throw new Error("同步块不存在。");
+  if (!existing) throw new Error("聚合块不存在。");
   const title = input.title === undefined ? existing.title : input.title.trim();
-  if (!title) throw new Error("同步块标题不能为空。");
+  if (!title) throw new Error("聚合块标题不能为空。");
   const syncBlock: SyncBlock = {
     ...existing,
     title,
@@ -1060,15 +1061,16 @@ export function searchSyncBlocks(
   syncBlocks: SyncBlock[],
   query: string,
 ): SyncBlock[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
+  const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return syncBlocks;
+  const terms = [...new Set(normalizedQuery.split(" "))];
 
-  return syncBlocks.filter((syncBlock) =>
-    [syncBlock.title, syncBlock.body, syncBlock.reviewNotes]
-      .join(" ")
-      .toLocaleLowerCase("zh-CN")
-      .includes(normalizedQuery),
-  );
+  return syncBlocks.filter((syncBlock) => {
+    const text = normalizeSearchText(
+      [syncBlock.title, syncBlock.body, syncBlock.reviewNotes].join(" "),
+    );
+    return terms.every((term) => text.includes(term));
+  });
 }
 
 export function getFavoriteSyncBlocks(

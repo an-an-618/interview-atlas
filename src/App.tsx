@@ -25,7 +25,6 @@ import {
   Search,
   Settings,
   Sparkles,
-  Star,
   Trash2,
   Upload,
   X,
@@ -38,12 +37,12 @@ import type {
   AIProviderCredentialId,
 } from "./ai/types";
 import { AISettingsPanel, InterviewImportPage, extractionProgressLabel } from "./components/AI";
+import { AggregateBlocksPage } from "./components/AggregateBlocks";
+import { EmptyState, PageHeader } from "./components/PageLayout";
 import { AnswerEditor } from "./components/AnswerEditor";
 import { AnswerOutline } from "./components/AnswerOutline";
 import { InterviewForm, QuestionForm, SyncBlockForm } from "./components/Forms";
 import { GlobalSearchPage } from "./components/GlobalSearch";
-import { InlineAnswer } from "./components/InlineAnswer";
-import { InlineText } from "./components/InlineText";
 import { InterviewRecorder } from "./components/InterviewRecorder";
 import { Modal } from "./components/Modal";
 import { MockInterviewPage } from "./components/MockInterview";
@@ -64,7 +63,6 @@ import type {
   ResumeExperience,
   SyncBlock,
   UpdateAIReviewCandidateInput,
-  UpdateSyncBlockInput,
   Workspace,
 } from "./domain/types";
 import {
@@ -72,8 +70,6 @@ import {
   getRandomQuestion,
   getInterviewQuestionIds,
   isAIReviewCandidatePending,
-  searchSyncBlocks,
-  sortSyncBlocksByLinkedQuestionCount,
 } from "./domain/workspace";
 import { useAISettings } from "./hooks/useAISettings";
 import { useTranscriptionSettings } from "./hooks/useTranscriptionSettings";
@@ -109,7 +105,7 @@ const navItems = [
   { id: "mock" as const, label: "模拟面试", icon: MessageSquareText },
   { id: "interviews" as const, label: "面试记录", icon: FileText },
   { id: "questions" as const, label: "原子问答", icon: CircleHelp },
-  { id: "sync" as const, label: "同步块", icon: Link2 },
+  { id: "sync" as const, label: "聚合块", icon: Link2 },
   { id: "resume" as const, label: "简历经历", icon: FileUser },
   { id: "settings" as const, label: "设置", icon: Settings },
 ];
@@ -159,51 +155,9 @@ function formatDate(value: string) {
   }).format(new Date(`${value}T00:00:00`));
 }
 
-function PageHeader({
-  eyebrow,
-  title,
-  description,
-  action,
-}: {
-  eyebrow: React.ReactNode;
-  title: React.ReactNode;
-  description?: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <header className="page-header">
-      <div>
-        <p className="eyebrow">{eyebrow}</p>
-        <h1>{title}</h1>
-        {description ? <p className="page-description">{description}</p> : null}
-      </div>
-      {action}
-    </header>
-  );
-}
-
 function StatusBadge({ status, task }: { status: InterviewStatus; task?: Interview["extractionTask"] }) {
   return (
     <span className={`status status-${status}`}>{task && task.status !== "completed" ? extractionLabel(task) : statusLabel[status]}</span>
-  );
-}
-
-function EmptyState({
-  title,
-  description,
-  action,
-}: {
-  title: string;
-  description: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="empty-state">
-      <BookOpen size={28} strokeWidth={1.4} aria-hidden="true" />
-      <h2>{title}</h2>
-      <p>{description}</p>
-      {action}
-    </div>
   );
 }
 
@@ -403,7 +357,7 @@ function OverviewPage({
             <section className="panel">
               <div className="section-heading">
                 <div>
-                  <h2>同步块收藏夹</h2>
+                  <h2>聚合块收藏夹</h2>
                 </div>
                 <span>{favoriteSyncBlocks.length} 项</span>
               </div>
@@ -434,12 +388,12 @@ function OverviewPage({
                 </div>
               ) : (
                 <div className="panel-empty">
-                  <p>在同步块页面点亮星标，常用回答会集中显示在这里。</p>
+                  <p>在聚合块页面点亮星标，常用回答会集中显示在这里。</p>
                   <button
                     className="text-button"
                     onClick={() => onNavigate("sync")}
                   >
-                    去收藏同步块
+                    去收藏聚合块
                   </button>
                 </div>
               )}
@@ -1069,7 +1023,7 @@ function InterviewsPage({
               </div>
               <div>
                 <h3>仍然保留</h3>
-                <p>关联的同步块、简历经历，以及它们的其他内容与关联。</p>
+                <p>关联的聚合块、简历经历，以及它们的其他内容与关联。</p>
               </div>
             </div>
             <p className="interview-delete-note">若其中的问答被其他面试共用，该问答也会一并删除。</p>
@@ -1587,8 +1541,8 @@ function AISyncReviewCard({
         </div>
         <Link2 size={18} aria-hidden="true" />
         <div>
-          <span>目标同步块</span>
-          <strong>{syncBlock?.title ?? "同步块已不存在"}</strong>
+          <span>目标聚合块</span>
+          <strong>{syncBlock?.title ?? "聚合块已不存在"}</strong>
         </div>
       </div>
       {candidate.matchReason ? <p>{candidate.matchReason}</p> : null}
@@ -1782,7 +1736,7 @@ function AIReviewPage({
               className={reviewComplete ? "complete" : questionsComplete ? "active" : "locked"}
             >
               <span>{reviewComplete ? <CheckCircle2 size={15} /> : "2"}</span>
-              <strong>审核同步块</strong>
+              <strong>审核聚合块</strong>
               <small>{syncCandidates.length - pendingSync.length}/{syncCandidates.length}</small>
             </a>
           </nav>
@@ -1825,8 +1779,8 @@ function AIReviewPage({
             <header>
               <span className="ai-review-stage-number">02</span>
               <div>
-                <p className="eyebrow">Sync blocks</p>
-                <h2>审核同步块关联</h2>
+                <p className="eyebrow">Aggregate blocks</p>
+                <h2>审核聚合块关联</h2>
                 <p>只处理已采纳问答的关联建议。忽略关联不会影响上一步保存的问答。</p>
               </div>
               <strong>
@@ -1841,7 +1795,7 @@ function AIReviewPage({
               <div className="ai-sync-review-locked">
                 <LockKeyhole size={22} aria-hidden="true" />
                 <strong>先完成原子问答审核</strong>
-                <p>所有问答均采纳或忽略后，这里的同步块关联建议才会开放。</p>
+                <p>所有问答均采纳或忽略后，这里的聚合块关联建议才会开放。</p>
               </div>
             ) : syncCandidates.length ? (
               <div className="ai-sync-review-list">
@@ -1860,7 +1814,7 @@ function AIReviewPage({
             ) : (
               <div className="ai-review-page-state complete">
                 <CheckCircle2 size={21} aria-hidden="true" />
-                <strong>没有需要审核的同步块关联</strong>
+                <strong>没有需要审核的聚合块关联</strong>
                 <p>已采纳的原子问答会独立保存在问答库中。</p>
               </div>
             )}
@@ -1871,7 +1825,7 @@ function AIReviewPage({
               <CheckCircle2 size={20} aria-hidden="true" />
               <div>
                 <strong>本次 AI 解析审核已完成</strong>
-                <p>原子问答和同步块关联均已按你的决策保存。</p>
+                <p>原子问答和聚合块关联均已按你的决策保存。</p>
               </div>
               <button className="button secondary" type="button" onClick={onOpenInterview}>
                 返回面试详情
@@ -2071,7 +2025,7 @@ function InterviewDetail({
                 <span>{String(index + 1).padStart(2, "0")}</span>
                 <strong>{question.title}</strong>
                 {question.linkedSyncBlockId ? (
-                  <Link2 size={13} aria-label="已关联同步块" />
+                  <Link2 size={13} aria-label="已关联聚合块" />
                 ) : null}
               </button>
             ))}
@@ -2247,7 +2201,7 @@ function InterviewDetail({
                       >
                         <Link2 size={14} aria-hidden="true" />
                         <span>
-                          <small>同步块 · 已关联稳定回答</small>
+                          <small>聚合块 · 已关联稳定回答</small>
                           <strong>{syncBlock.title}</strong>
                         </span>
                         <ChevronRight size={15} aria-hidden="true" />
@@ -2273,7 +2227,7 @@ function InterviewDetail({
                         onClick={() => onCreateSync(question.id)}
                       >
                         <Link2 size={14} aria-hidden="true" />
-                        关联到同步块
+                        关联到聚合块
                       </button>
                     ) : null}
                   </article>
@@ -2308,7 +2262,7 @@ function InterviewDetail({
         <div className="interview-ai-desktop-entry">
           <p className="eyebrow">AI 解析审核</p>
           <h2>{aiReviewStatus}</h2>
-          <p>在独立页面中依次审核原子问答和同步块关联。</p>
+          <p>在独立页面中依次审核原子问答和聚合块关联。</p>
           <button className="button primary" type="button" onClick={onOpenAIReview}>
             <Sparkles size={14} aria-hidden="true" />
             进入审核页
@@ -2330,7 +2284,7 @@ function InterviewDetail({
               </dd>
             </div>
             <div>
-              <dt>已关联同步块</dt>
+              <dt>已关联聚合块</dt>
               <dd>
                 {linkedQuestionCount}/{interviewQuestions.length}
               </dd>
@@ -2340,7 +2294,7 @@ function InterviewDetail({
 
         <section>
           <p className="eyebrow">Relations</p>
-          <h2>同步块关系</h2>
+          <h2>聚合块关系</h2>
           {linkedSyncBlocks.length ? (
             <div className="interview-related-syncs">
               {linkedSyncBlocks.map((syncBlock) => (
@@ -2361,7 +2315,7 @@ function InterviewDetail({
               ))}
             </div>
           ) : (
-            <p className="interview-aside-empty">当前面试还没有关联同步块。</p>
+            <p className="interview-aside-empty">当前面试还没有关联聚合块。</p>
           )}
         </section>
 
@@ -2489,7 +2443,7 @@ function QuestionsPage({
             都是<em>一个可以复用的原子</em>
           </>
         }
-        description="实例回答保留当时的上下文，稳定回答通过同步块复用。"
+        description="实例回答保留当时的上下文，相似问答通过聚合块汇集，沉淀可复用的回答。"
         action={
           <button className="button primary" onClick={onCreateQuestion}>
             <Plus size={15} aria-hidden="true" />
@@ -2598,7 +2552,7 @@ function QuestionsPage({
                       <span>{syncBlock.title}</span>
                     </>
                   ) : (
-                    <span>未关联同步块</span>
+                    <span>未关联聚合块</span>
                   )}
                 </span>
                 <ChevronRight
@@ -2803,8 +2757,8 @@ function QuestionDetail({
         <section>
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Synchronized knowledge</p>
-              <h2>关联同步块</h2>
+              <p className="eyebrow">Aggregated knowledge</p>
+              <h2>关联聚合块</h2>
             </div>
           </div>
           {syncBlock ? (
@@ -2815,12 +2769,12 @@ function QuestionDetail({
               <Link2 size={15} aria-hidden="true" />
               <span>
                 <strong>{syncBlock.title}</strong>
-                <small>查看同步块正文与复习笔记</small>
+                <small>查看聚合块正文与复习笔记</small>
               </span>
               <ChevronRight size={15} aria-hidden="true" />
             </button>
           ) : (
-            <p className="relation-empty">尚未关联同步块。</p>
+            <p className="relation-empty">尚未关联聚合块。</p>
           )}
         </section>
 
@@ -2882,295 +2836,6 @@ function QuestionDetail({
           )}
         </section>
       </div>
-    </div>
-  );
-}
-
-function SyncPage({
-  syncBlocks,
-  questions,
-  resumeExperiences,
-  selectedId,
-  onSelect,
-  onCreate,
-  onOpenQuestion,
-  onOpenResume,
-  onUpdate,
-}: {
-  syncBlocks: SyncBlock[];
-  questions: AtomicQuestion[];
-  resumeExperiences: ResumeExperience[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  onCreate: () => void;
-  onOpenQuestion: (id: string) => void;
-  onOpenResume: (id: string) => void;
-  onUpdate: (id: string, input: UpdateSyncBlockInput) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
-  const sortedSyncBlocks = useMemo(
-    () => sortSyncBlocksByLinkedQuestionCount(syncBlocks),
-    [syncBlocks],
-  );
-  const favoriteSyncBlocks = useMemo(
-    () => getFavoriteSyncBlocks({ syncBlocks }),
-    [syncBlocks],
-  );
-  const scopedSyncBlocks = showFavoritesOnly
-    ? favoriteSyncBlocks
-    : sortedSyncBlocks;
-  const visibleSyncBlocks = useMemo(
-    () => searchSyncBlocks(scopedSyncBlocks, query),
-    [query, scopedSyncBlocks],
-  );
-  const selected =
-    visibleSyncBlocks.find((item) => item.id === selectedId) ??
-    visibleSyncBlocks[0];
-  const linkedExperiences = selected
-    ? resumeExperiences.filter(
-        (experience) =>
-          experience.linkedSyncBlockIds.includes(selected.id) ||
-          experience.linkedQuestionIds.some((id) =>
-            selected.linkedQuestionIds.includes(id),
-          ),
-      )
-    : [];
-
-  return (
-    <div className="page sync-page">
-      <PageHeader
-        eyebrow="Synchronized knowledge"
-        title="同步块"
-        description="牵一发而动全身，盘活你的知识资产"
-        action={
-          <button className="button primary" onClick={onCreate}>
-            <Plus size={16} aria-hidden="true" />
-            新建同步块
-          </button>
-        }
-      />
-      {syncBlocks.length ? (
-        <div className="toolbar sync-search-toolbar">
-          <label className="search-field">
-            <Search size={16} aria-hidden="true" />
-            <input
-              aria-label="搜索同步块"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={
-                showFavoritesOnly
-                  ? "搜索收藏同步块"
-                  : "搜索标题、稳定回答或复习笔记"
-              }
-            />
-          </label>
-          <div className="segmented sync-scope-filter" aria-label="同步块范围">
-            <button
-              className={showFavoritesOnly ? "" : "active"}
-              type="button"
-              aria-pressed={!showFavoritesOnly}
-              onClick={() => setShowFavoritesOnly(false)}
-            >
-              全部
-            </button>
-            <button
-              className={showFavoritesOnly ? "active" : ""}
-              type="button"
-              aria-pressed={showFavoritesOnly}
-              onClick={() => setShowFavoritesOnly(true)}
-            >
-              <Star
-                size={14}
-                fill={showFavoritesOnly ? "currentColor" : "none"}
-                aria-hidden="true"
-              />
-              收藏
-            </button>
-          </div>
-          <span className="sync-search-summary" aria-live="polite">
-            显示 {visibleSyncBlocks.length} / {scopedSyncBlocks.length} 个
-          </span>
-        </div>
-      ) : null}
-      {visibleSyncBlocks.length && selected ? (
-        <div className="sync-layout">
-          <nav className="sync-list" aria-label="同步块列表">
-            {visibleSyncBlocks.map((syncBlock) => (
-              <div
-                className={`sync-list-item${
-                  syncBlock.id === selected.id ? " active" : ""
-                }`}
-                key={syncBlock.id}
-              >
-                <button
-                  className="sync-list-select"
-                  type="button"
-                  onClick={() => onSelect(syncBlock.id)}
-                >
-                  <strong>{syncBlock.title}</strong>
-                  <small>{syncBlock.linkedQuestionIds.length} 个关联问答</small>
-                </button>
-                <button
-                  className={`sync-favorite-button${
-                    syncBlock.favorite ? " active" : ""
-                  }`}
-                  type="button"
-                  aria-label={
-                    syncBlock.favorite
-                      ? `取消收藏「${syncBlock.title}」`
-                      : `收藏「${syncBlock.title}」`
-                  }
-                  aria-pressed={syncBlock.favorite}
-                  title={syncBlock.favorite ? "取消收藏" : "收藏"}
-                  onClick={() =>
-                    onUpdate(syncBlock.id, {
-                      favorite: !syncBlock.favorite,
-                    })
-                  }
-                >
-                  <Star
-                    size={17}
-                    fill={syncBlock.favorite ? "currentColor" : "none"}
-                    aria-hidden="true"
-                  />
-                </button>
-              </div>
-            ))}
-          </nav>
-          <article className="sync-detail" key={selected.id}>
-            <header className="sync-detail-header">
-              <div>
-                <p className="eyebrow">Stable answer</p>
-                <h2>
-                  <InlineText
-                    value={selected.title}
-                    label="同步块标题"
-                    placeholder="填写同步块标题"
-                    required
-                    onSave={(title) => onUpdate(selected.id, { title })}
-                  />
-                </h2>
-              </div>
-              <button
-                className={`sync-detail-favorite${
-                  selected.favorite ? " active" : ""
-                }`}
-                type="button"
-                aria-label={selected.favorite ? "取消收藏同步块" : "收藏同步块"}
-                aria-pressed={selected.favorite}
-                title={selected.favorite ? "取消收藏" : "收藏"}
-                onClick={() =>
-                  onUpdate(selected.id, { favorite: !selected.favorite })
-                }
-              >
-                <Star
-                  size={22}
-                  fill={selected.favorite ? "currentColor" : "none"}
-                  aria-hidden="true"
-                />
-              </button>
-            </header>
-            <div className="sync-body">
-              <InlineAnswer
-                value={selected.body}
-                label="稳定回答"
-                placeholder="点击填写稳定回答"
-                onSave={(body) => onUpdate(selected.id, { body })}
-              />
-            </div>
-            <aside className="review-note">
-              <strong>复习笔记</strong>
-              <p>
-                <InlineText
-                  value={selected.reviewNotes}
-                  label="复习笔记"
-                  placeholder="点击填写复习笔记"
-                  multiline
-                  onSave={(reviewNotes) => onUpdate(selected.id, { reviewNotes })}
-                />
-              </p>
-            </aside>
-            <div className="linked-section">
-              <h3>关联原子问答 · {selected.linkedQuestionIds.length}</h3>
-              {selected.linkedQuestionIds.map((id) => {
-                const question = questions.find((item) => item.id === id);
-                return question ? (
-                  <button
-                    className="linked-question-row"
-                    key={id}
-                    onClick={() => onOpenQuestion(question.id)}
-                  >
-                    <CircleHelp size={14} aria-hidden="true" />
-                    <span>{question.title}</span>
-                    <ChevronRight size={14} aria-hidden="true" />
-                  </button>
-                ) : null;
-              })}
-            </div>
-            <div className="linked-section">
-              <h3>关联简历经历 · {linkedExperiences.length}</h3>
-              {linkedExperiences.length ? (
-                linkedExperiences.map((experience) => (
-                  <button
-                    className="linked-question-row"
-                    key={experience.id}
-                    onClick={() => onOpenResume(experience.id)}
-                  >
-                    <FileUser size={14} aria-hidden="true" />
-                    <span>{experience.title}</span>
-                    <ChevronRight size={14} aria-hidden="true" />
-                  </button>
-                ))
-              ) : (
-                <p className="relation-empty">尚未关联简历经历。</p>
-              )}
-            </div>
-          </article>
-        </div>
-      ) : syncBlocks.length ? (
-        <EmptyState
-          title={
-            showFavoritesOnly && !favoriteSyncBlocks.length
-              ? "还没有收藏的同步块"
-              : showFavoritesOnly
-                ? "没有匹配的收藏同步块"
-                : "没有匹配的同步块"
-          }
-          description={
-            showFavoritesOnly && !favoriteSyncBlocks.length
-              ? "点亮同步块右侧的星标，即可在这里集中查看。"
-              : "调整关键词，或清除搜索查看当前范围内的同步块。"
-          }
-          action={
-            <button
-              className="button secondary"
-              type="button"
-              onClick={() => {
-                if (showFavoritesOnly && !favoriteSyncBlocks.length) {
-                  setShowFavoritesOnly(false);
-                } else {
-                  setQuery("");
-                }
-              }}
-            >
-              {showFavoritesOnly && !favoriteSyncBlocks.length
-                ? "查看全部同步块"
-                : "清除搜索"}
-            </button>
-          }
-        />
-      ) : (
-        <EmptyState
-          title="还没有同步块"
-          description="当一个问题值得跨面试复用时，为它维护一份稳定回答。"
-          action={
-            <button className="button primary" onClick={onCreate}>
-              创建第一个同步块
-            </button>
-          }
-        />
-      )}
     </div>
   );
 }
@@ -3412,7 +3077,7 @@ function ClearWorkspaceDialog({
           <p>
             将删除 {workspace.interviews.length} 条面试记录、
             {workspace.questions.length} 个原子问答、
-            {workspace.syncBlocks.length} 个同步块和
+            {workspace.syncBlocks.length} 个聚合块和
             {workspace.resumeExperiences.length} 条简历经历，以及相关审核与复习数据。
           </p>
         </div>
@@ -3831,7 +3496,7 @@ export default function App() {
                     ) : item.id === "questions" ? (
                       <small>{workspace.questions.length}</small>
                     ) : item.id === "sync" ? (
-                      <small>{workspace.syncBlocks.length}</small>
+                      <small>{workspace.syncBlocks.filter((block) => !block.hidden).length}</small>
                     ) : item.id === "resume" ? (
                       <small>{workspace.resumeExperiences.length}</small>
                     ) : null}
@@ -4121,7 +3786,7 @@ export default function App() {
             resumeExperiences={workspace.resumeExperiences}
             backLabel={
               questionReturnView === "sync"
-                ? "返回同步块"
+                ? "返回聚合块"
                 : questionReturnView === "resume"
                   ? "返回简历经历"
                   : questionReturnView === "overview"
@@ -4140,7 +3805,7 @@ export default function App() {
         ) : null}
 
         {view === "sync" ? (
-          <SyncPage
+          <AggregateBlocksPage
             syncBlocks={workspace.syncBlocks}
             questions={workspace.questions}
             resumeExperiences={workspace.resumeExperiences}
@@ -4174,7 +3839,7 @@ export default function App() {
             onDelete={(experienceId) => {
               if (
                 !window.confirm(
-                  "确定删除这条简历经历吗？关联的问答和同步块不会被删除。",
+                  "确定删除这条简历经历吗？关联的问答和聚合块不会被删除。",
                 )
               ) {
                 return;
@@ -4305,7 +3970,7 @@ export default function App() {
                     : item.id === "questions"
                       ? "问答"
                       : item.id === "sync"
-                        ? "同步"
+                        ? "聚合块"
                         : "简历";
 
                 return (
@@ -4331,7 +3996,7 @@ export default function App() {
       {dialog?.kind === "question" ? (
         <Modal
           title="添加原子问答"
-          description="这份回答属于当前面试实例，不会被同步块自动覆盖。"
+          description="这份回答属于当前面试实例，不会被聚合块自动覆盖。"
           onClose={() => setDialog(null)}
         >
           <QuestionForm
@@ -4348,7 +4013,7 @@ export default function App() {
       {dialog?.kind === "standalone-question" ? (
         <Modal
           title="新建原子问答"
-          description="独立创建的问题可以稍后关联面试记录或同步块。"
+          description="独立创建的问题可以稍后关联面试记录或聚合块。"
           onClose={() => setDialog(null)}
         >
           <QuestionForm
@@ -4366,10 +4031,10 @@ export default function App() {
       {dialog?.kind === "sync" ? (
         <Modal
           className="sync-block-modal"
-          title={dialog.questionId ? "关联到同步块" : "创建同步块"}
+          title={dialog.questionId ? "关联到聚合块" : "创建聚合块"}
           description={
             dialog.questionId
-              ? "选择已有同步块，或新建一份可持续修订的稳定回答。"
+              ? "选择已有聚合块来汇集相似问答，或新建聚合块并整理可复用的回答。"
               : "为重复问题维护一份稳定回答，并保留每次面试的实例内容。"
           }
           onClose={() => setDialog(null)}
@@ -4385,13 +4050,13 @@ export default function App() {
               linkQuestionToSyncBlock(dialog.questionId, syncBlockId);
               setDialog(null);
               openSync(syncBlockId);
-              notify("原子问答已关联到同步块");
+              notify("原子问答已关联到聚合块");
             }}
             onSubmit={(input) => {
               const syncBlock = createSyncBlock(input);
               setDialog(null);
               openSync(syncBlock.id);
-              notify("同步块已保存并建立引用");
+              notify("聚合块已保存并建立引用");
             }}
           />
         </Modal>

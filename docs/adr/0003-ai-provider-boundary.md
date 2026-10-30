@@ -8,7 +8,7 @@
 
 见字·如面需要在保持本地优先和人工最终决策的前提下接入用户自备模型。当前交付形态是纯浏览器静态客户端，没有产品后端、系统钥匙串或可信的服务端代理。
 
-首个 AI 闭环需要测试连接、面经结构化和同步块匹配建议，同时不能让 Provider 协议、凭据处理或模型响应格式散落在 React 页面中。
+首个 AI 闭环需要测试连接、面经结构化和聚合块匹配建议，同时不能让 Provider 协议、凭据处理或模型响应格式散落在 React 页面中。
 
 ## Decision
 
@@ -43,7 +43,7 @@ In the browser milestone, API Key is stored only in `sessionStorage`. It is remo
 
 Every content-bearing request requires an explicit user action. Before the first request in a workflow, the UI shows the destination endpoint and the categories of data being sent.
 
-Validated AI output is saved locally as pending review candidates. Only explicit user acceptance creates atomic questions or relationships. AI never silently overwrites user answers or merges synchronized blocks.
+Validated AI output is saved locally as pending review candidates. Only explicit user acceptance creates atomic questions or relationships. AI never silently overwrites user answers or merges aggregate blocks.
 
 As of 2026-10-01 (issue #15), user-initiated interview extraction belongs to an application-level FIFO queue with one active interview at a time. Closing the import dialog or navigating detaches the view without cancelling work. Explicit cancellation aborts the request and removes queued work. Tasks snapshot source text, provider configuration and credentials in memory; only task ID, status, progress, error and unread notification state are persisted on the interview. Duplicate starts for the same active interview reuse its task.
 
@@ -57,7 +57,7 @@ Identification returns question titles, source quotes and an explicit pagination
 
 The program assigns stable task-local question IDs, sorts by source position and requests answers in batches of four. Each target carries only its locally derived source context, from shortly before the question to the next identified question, rather than repeating the full transcript. Two answer batches may run concurrently. Each target ID must return exactly once, including empty answers when none are attributable. Answers use the interviewee's first-person or direct-statement voice; known third-person speaker prefixes are removed deterministically without rewriting the remaining content.
 
-Matching is a separate, optional stage. Local lexical retrieval ranks all visible synchronized blocks, with at most six options per question (bounded titles and 1,200-character summaries). Only those options and the question/answer preview are sent to the matcher, with at most two batches in flight. No transcript is sent in matching; no synchronized-block content is sent in identification or answer generation. Match responses must refer to their own provided option IDs and cannot alter question content. A persistent matching failure leaves that batch unmatched instead of discarding completed questions.
+Matching is a separate, optional stage. Local lexical retrieval ranks all visible aggregate blocks, with at most six options per question (bounded titles and 1,200-character summaries). Only those options and the question/answer preview are sent to the matcher, with at most two batches in flight. No transcript is sent in matching; no aggregate-block content is sent in identification or answer generation. Match responses must refer to their own provided option IDs and cannot alter question content. A persistent matching failure leaves that batch unmatched instead of discarding completed questions.
 
 Extraction requests use a 16,000-token output budget. Length-limited responses immediately reduce inventory page size or answer/matching batch size; malformed structured output receives one regeneration. Identification retains the full source, while answer retries retain the same target-local evidence. Other HTTP, network and refusal errors stop the required identification/answer stages. Each request has a 180-second deadline; the operation checks a 45-minute deadline between requests and rejects late responses, with at most 240 completion attempts (JSON compatibility fallback may add one HTTP request per attempt). A pending request may run up to its individual deadline. More than 100,000 source UTF-16 code units or 400 identified questions fails explicitly instead of silently truncating. Provider context-capacity errors require a larger-context model.
 
@@ -67,7 +67,7 @@ Structured requests use JSON mode. If a provider explicitly rejects `response_fo
 
 ### Data minimization
 
-Interview extraction sends the selected interview as evidence; matching separately sends only locally retrieved synchronized-block options. It does not send the complete workspace, unrelated interviews, review notes or credentials in model messages.
+Interview extraction sends the selected interview as evidence; matching separately sends only locally retrieved aggregate-block options. It does not send the complete workspace, unrelated interviews, review notes or credentials in model messages.
 
 ## Alternatives considered
 
@@ -100,6 +100,6 @@ Deferred as the sole option. Browser and desktop local inference require separat
 - Workspace export never contains the API Key.
 - Reloading the same tab restores session credentials; a new browser session does not rely on persistent application storage.
 - Unknown or malformed model fields do not enter the workspace.
-- An unknown synchronized-block ID is discarded.
+- An unknown aggregate-block ID is discarded.
 - Cancellation and timeout preserve the original draft and existing knowledge; only task status changes.
 - Confirming selected extraction candidates creates only those atomic questions and preserves the source interview.

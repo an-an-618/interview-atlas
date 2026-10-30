@@ -208,7 +208,7 @@ function ResumeCreateForm({
             type="button"
             onClick={() => setRelationTab("sync")}
           >
-            同步块
+            聚合块
             <small>{syncBlockIds.length}</small>
           </button>
         </div>
@@ -245,7 +245,7 @@ function ResumeCreateForm({
           </fieldset>
         ) : (
           <fieldset className="question-picker resume-picker">
-            <legend>选择直接关联的同步块</legend>
+            <legend>选择直接关联的聚合块</legend>
             {syncBlocks.length ? (
               syncBlocks.map((syncBlock) => {
                 const checked = syncBlockIds.includes(syncBlock.id);
@@ -273,7 +273,7 @@ function ResumeCreateForm({
                 );
               })
             ) : (
-              <p className="empty-inline">暂无可关联的同步块。</p>
+              <p className="empty-inline">暂无可关联的聚合块。</p>
             )}
           </fieldset>
         )}
@@ -539,7 +539,7 @@ function ResumeCard({
               />
 
               <div className="resume-editor-heading relation-heading">
-                <strong>关联同步块 · {relatedSyncBlocks.length}</strong>
+                <strong>关联聚合块 · {relatedSyncBlocks.length}</strong>
                 <button
                   className="text-button"
                   type="button"
@@ -562,7 +562,7 @@ function ResumeCard({
                     </button>
                   ))
                 ) : (
-                  <p>暂无关联同步块</p>
+                  <p>暂无关联聚合块</p>
                 )}
               </div>
 
@@ -607,7 +607,7 @@ function ResumeCard({
                     {!questions.length ? <p>暂无原子问答。</p> : null}
                   </section>
                   <section>
-                    <strong>选择直接关联的同步块</strong>
+                    <strong>选择直接关联的聚合块</strong>
                     {syncBlocks.map((syncBlock) => (
                       <label key={syncBlock.id}>
                         <input
@@ -622,7 +622,7 @@ function ResumeCard({
                         <span>{syncBlock.title}</span>
                       </label>
                     ))}
-                    {!syncBlocks.length ? <p>暂无同步块。</p> : null}
+                    {!syncBlocks.length ? <p>暂无聚合块。</p> : null}
                   </section>
                 </div>
               ) : null}
@@ -674,7 +674,7 @@ function ResumeCard({
                 </button>
               </header>
               <p className="resume-diff-note">
-                确认后只更新这条简历经历，不会改写已关联的原子问答或同步块正文。
+                确认后只更新这条简历经历，不会改写已关联的原子问答或聚合块正文。
               </p>
 
               {metadataChanges.length ? (
@@ -733,13 +733,13 @@ function ResumeCard({
                     ))}
                     {syncRemoves.map((id) => (
                       <p className="removed" key={`remove-sync-${id}`}>
-                        − 解除同步块：
+                        − 解除聚合块：
                         {syncBlocks.find((item) => item.id === id)?.title ?? id}
                       </p>
                     ))}
                     {syncAdds.map((id) => (
                       <p className="added" key={`add-sync-${id}`}>
-                        + 关联同步块：
+                        + 关联聚合块：
                         {syncBlocks.find((item) => item.id === id)?.title ?? id}
                       </p>
                     ))}

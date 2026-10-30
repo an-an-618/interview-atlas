@@ -390,7 +390,7 @@ function MockInterviewLobby({
                   ? `找到 ${matchingRoleCount} 场同公司同岗位记录，将优先学习其轮次与追问风格。`
                   : matchingCompanyCount
                     ? `找到 ${matchingCompanyCount} 场同公司记录，将参考公司面试风格。`
-                    : "暂无同公司历史记录，将从简历、问答和同步块中选择素材。"}
+                    : "暂无同公司历史记录，将从简历、问答和聚合块中选择素材。"}
               </small>
             </div>
           </header>
@@ -408,7 +408,7 @@ function MockInterviewLobby({
               <dd>{workspace.questions.length}</dd>
             </div>
             <div>
-              <dt>同步块</dt>
+              <dt>聚合块</dt>
               <dd>{workspace.syncBlocks.length}</dd>
             </div>
           </dl>
@@ -494,7 +494,7 @@ function MockInterviewLobby({
         </footer>
         <p className="mock-data-note">
           发起请求时会发送上述输入，以及最多 6 场相关历史面试、36
-          条问答、24 个同步块和 16 条简历经历；API Key 仍只保留在当前会话。
+          条问答、24 个聚合块和 16 条简历经历；API Key 仍只保留在当前会话。
         </p>
         {error ? (
           <p className="mock-inline-error" role="alert">

@@ -14,10 +14,10 @@
 
 ## What it does
 
-Interview Atlas preserves the original interview record as evidence, extracts concrete atomic Q&A instances, and connects recurring questions to synchronized blocks that hold a stable answer. Ordinary AI extraction remains reviewable; a mock interview explicitly started by the user automatically saves its transcript and atomic Q&A without creating synchronized-block links.
+Interview Atlas preserves the original interview record as evidence, extracts concrete atomic Q&A instances, and groups similar Q&A in aggregate blocks that hold a reusable answer. Ordinary AI extraction remains reviewable; a mock interview explicitly started by the user automatically saves its transcript and atomic Q&A without creating aggregate-block links.
 
 ```text
-Interview record → Atomic Q&A → Synchronized block → Review
+Interview record → Atomic Q&A → Aggregate block → Review
         │                │               │
       evidence        instance      stable answer
 ```
@@ -31,10 +31,10 @@ The current application includes:
 - interview import, manual structuring, queued full-transcript AI extraction, and staged review;
 - interview editing and saved organization by company, role, round, date, tag, or custom collection;
 - standalone atomic Q&A with structured answer points and inline editing;
-- synchronized blocks with explicit, bidirectional relationships;
-- global search plus synchronized-block favorites, filtering, and relationship-count sorting;
+- aggregate blocks with explicit, bidirectional relationships;
+- global search plus aggregate-block favorites, filtering, and relationship-count sorting;
 - resume experiences with CRUD, relationship management, and diff preview;
-- a daily question, a synchronized-block favorites folder, and decoupled Q&A/link review;
+- a daily question, an aggregate-block favorites folder, and decoupled Q&A/link review;
 - AI mock interviews grounded in prior interviews, resume evidence, and Q&A, with post-interview feedback and automatic capture;
 - dual-track macOS recording for system and microphone audio, with optional Xfyun transcription;
 - validated versioned JSON export and restore, explicit demo data, and workspace deletion;

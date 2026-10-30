@@ -1,4 +1,5 @@
 import type { Workspace } from "./types";
+import { normalizeSearchText as normalize } from "./searchText";
 
 export type SearchAssetType =
   | "interview"
@@ -36,9 +37,6 @@ const typeOrder: Record<SearchAssetType, number> = {
   sync: 2,
   resume: 3,
 };
-
-const normalize = (value: string) =>
-  value.normalize("NFKC").toLocaleLowerCase("zh-CN").replace(/\s+/g, " ").trim();
 
 function fieldScore(text: string, term: string, weight: number) {
   if (!text || !term) return 0;
