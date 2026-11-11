@@ -387,21 +387,19 @@ describe("OpenAI-compatible client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 
-  it("parses interviewer end decisions and tolerates plain-text providers", () => {
+  it("parses validated interviewer actions and rejects plain-text providers", () => {
     expect(
       parseMockInterviewTurnResponse(
-        '{"message":"本次面试到此结束。","shouldEnd":true,"endReason":"已完成八个问题"}',
+        '{"message":"本次面试到此结束。","action":"end","competencyId":"","shouldEnd":true,"endReason":"已完成八个问题"}',
       ),
     ).toEqual({
       message: "本次面试到此结束。",
       shouldEnd: true,
       endReason: "已完成八个问题",
+      action: "end",
+      competencyId: "",
     });
-    expect(parseMockInterviewTurnResponse("请介绍一下你的项目。")).toEqual({
-      message: "请介绍一下你的项目。",
-      shouldEnd: false,
-      endReason: "",
-    });
+    expect(() => parseMockInterviewTurnResponse("请介绍一下你的项目。")).toThrow();
   });
 
   it("validates feedback reports and limits generated atomic question tags", () => {
@@ -479,7 +477,7 @@ describe("OpenAI-compatible client", () => {
                   content: JSON.stringify({
                     summary: "能够说明基本路径",
                     overallAssessment: "回答包含指标和定位步骤。",
-                    strengths: [],
+                    strengths: [{ title: "基本路径", detail: "回答包含指标。", evidenceRefs: [{ messageId: "message-2", quote: "我先测量 LCP" }] }],
                     improvements: [],
                     nextSteps: [],
                     questionReviews: [],

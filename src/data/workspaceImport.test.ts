@@ -15,7 +15,7 @@ import {
 
 function createBackup(): WorkspaceExport {
   return {
-    formatVersion: 10,
+    formatVersion: 11,
     exportedAt: "2026-10-01T00:00:00.000Z",
     ...createDemoWorkspace(),
   };
@@ -26,12 +26,25 @@ function serialize(value: unknown): string {
 }
 
 describe("workspace backup import", () => {
-  it("parses a version 10 export and preserves relationships and favorites", () => {
+  it("preserves optional atomic-question favorites and accepts old backups without them", () => {
+    const backup = createBackup();
+    backup.questions[0].favorite = true;
+    backup.questions[1].favorite = false;
+    const restored = parseWorkspaceExport(serialize(backup)).workspace;
+    expect(restored.questions[0].favorite).toBe(true);
+    expect(restored.questions[1].favorite).toBe(false);
+    delete backup.questions[0].favorite;
+    expect(parseWorkspaceExport(serialize(backup)).workspace.questions[0].favorite).toBeUndefined();
+    (backup.questions[0] as unknown as Record<string, unknown>).favorite = "yes";
+    expect(() => parseWorkspaceExport(serialize(backup))).toThrow("questions[0].favorite");
+  });
+
+  it("parses a version 11 export and preserves relationships and favorites", () => {
     const backup = createBackup();
     const parsed = parseWorkspaceExport(serialize(backup));
 
     expect(parsed).toEqual({
-      formatVersion: 10,
+      formatVersion: 11,
       exportedAt: backup.exportedAt,
       workspace: createDemoWorkspace(),
     });
@@ -54,7 +67,7 @@ describe("workspace backup import", () => {
       ],
     });
     const backup: WorkspaceExport = {
-      formatVersion: 10,
+      formatVersion: 11,
       exportedAt: "2026-10-02T00:00:00.000Z",
       ...organized.workspace,
     };
@@ -128,7 +141,7 @@ describe("workspace backup import", () => {
       ],
     );
     const backup: WorkspaceExport = {
-      formatVersion: 10,
+      formatVersion: 11,
       exportedAt: "2026-10-01T00:00:00.000Z",
       ...analyzed.workspace,
     };
@@ -238,7 +251,7 @@ describe("workspace backup import", () => {
     expect(() => parseWorkspaceExport("{")).toThrow(WorkspaceImportError);
     expect(() =>
       parseWorkspaceExport(
-        serialize({ ...createBackup(), formatVersion: 11 }),
+        serialize({ ...createBackup(), formatVersion: 12 }),
       ),
     ).toThrow("当前支持版本 1 至 10");
   });

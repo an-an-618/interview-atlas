@@ -25,6 +25,8 @@ import {
 import { InlineAnswer } from "./InlineAnswer";
 import { InlineText } from "./InlineText";
 import { EmptyState, PageHeader } from "./PageLayout";
+import { ShareButton } from "./Share";
+import type { ShareTarget } from "../domain/share";
 
 export function AggregateBlocksPage({
   syncBlocks,
@@ -36,6 +38,7 @@ export function AggregateBlocksPage({
   onOpenQuestion,
   onOpenResume,
   onUpdate,
+  onShare,
 }: {
   syncBlocks: SyncBlock[];
   questions: AtomicQuestion[];
@@ -46,6 +49,7 @@ export function AggregateBlocksPage({
   onOpenQuestion: (id: string) => void;
   onOpenResume: (id: string) => void;
   onUpdate: (id: string, input: UpdateSyncBlockInput) => void;
+  onShare: (target: ShareTarget) => void;
 }) {
   const [query, setQuery] = useState("");
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
@@ -96,6 +100,24 @@ export function AggregateBlocksPage({
     setShowFavoritesOnly(favoritesOnly);
     setIsListCollapsed(false);
   };
+
+  const listToggle = (
+    <button
+      className="button secondary sync-list-toggle"
+      type="button"
+      aria-label={isListCollapsed ? "展开聚合块列表" : "收起聚合块列表"}
+      aria-expanded={!isListCollapsed}
+      aria-controls="aggregate-block-list"
+      onClick={() => setIsListCollapsed((collapsed) => !collapsed)}
+    >
+      {isListCollapsed ? (
+        <PanelLeftOpen size={16} aria-hidden="true" />
+      ) : (
+        <PanelLeftClose size={16} aria-hidden="true" />
+      )}
+      {isListCollapsed ? "展开列表" : "收起列表"}
+    </button>
+  );
 
   return (
     <div className="page sync-page">
@@ -169,23 +191,7 @@ export function AggregateBlocksPage({
                 收藏
               </button>
             </div>
-            {visibleSyncBlocks.length ? (
-              <button
-                className="button secondary sync-list-toggle"
-                type="button"
-                aria-label={isListCollapsed ? "展开聚合块列表" : "收起聚合块列表"}
-                aria-expanded={!isListCollapsed}
-                aria-controls="aggregate-block-list"
-                onClick={() => setIsListCollapsed((collapsed) => !collapsed)}
-              >
-                {isListCollapsed ? (
-                  <PanelLeftOpen size={16} aria-hidden="true" />
-                ) : (
-                  <PanelLeftClose size={16} aria-hidden="true" />
-                )}
-                {isListCollapsed ? "展开列表" : "收起列表"}
-              </button>
-            ) : null}
+            {visibleSyncBlocks.length ? listToggle : null}
             <span className="sync-search-summary" aria-live="polite">
               显示 {visibleSyncBlocks.length} / {scopedSyncBlocks.length} 个
             </span>
@@ -201,8 +207,11 @@ export function AggregateBlocksPage({
             hidden={isListCollapsed}
           >
             <div className="sync-list-heading">
-              <strong>聚合块目录</strong>
-              <span>按关联问答数排序</span>
+              <div className="sync-list-heading-copy">
+                <strong>聚合块目录</strong>
+                <span>按关联问答数排序</span>
+              </div>
+              {listToggle}
             </div>
             {visibleSyncBlocks.map((syncBlock) => (
               <div
@@ -262,24 +271,27 @@ export function AggregateBlocksPage({
                   />
                 </h2>
               </div>
-              <button
-                className={`sync-detail-favorite${
-                  selected.favorite ? " active" : ""
-                }`}
-                type="button"
-                aria-label={selected.favorite ? "取消收藏聚合块" : "收藏聚合块"}
-                aria-pressed={selected.favorite}
-                title={selected.favorite ? "取消收藏" : "收藏"}
-                onClick={() =>
-                  onUpdate(selected.id, { favorite: !selected.favorite })
-                }
-              >
-                <Star
-                  size={22}
-                  fill={selected.favorite ? "currentColor" : "none"}
-                  aria-hidden="true"
-                />
-              </button>
+              <div className="share-detail-actions">
+                <ShareButton onClick={() => onShare({ kind: "aggregate", id: selected.id })} />
+                <button
+                  className={`sync-detail-favorite${
+                    selected.favorite ? " active" : ""
+                  }`}
+                  type="button"
+                  aria-label={selected.favorite ? "取消收藏聚合块" : "收藏聚合块"}
+                  aria-pressed={selected.favorite}
+                  title={selected.favorite ? "取消收藏" : "收藏"}
+                  onClick={() =>
+                    onUpdate(selected.id, { favorite: !selected.favorite })
+                  }
+                >
+                  <Star
+                    size={22}
+                    fill={selected.favorite ? "currentColor" : "none"}
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
             </header>
             <section className="sync-answer-section" aria-label="聚合块回答">
               <div className="sync-section-heading">

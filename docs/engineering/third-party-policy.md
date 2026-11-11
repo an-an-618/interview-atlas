@@ -54,3 +54,9 @@ Tauri 2.12.0 is approved by [ADR 0004](../adr/0004-macos-tauri-wrapper.md) and [
 - Network behavior: package installation contacts the configured npm and Cargo registries. The desktop runtime adds no telemetry or product backend.
 - Credentials: unsigned local builds require none. The opener plugin receives only the selected URL and cannot access AI credentials or workspace data. Future signing and notarization credentials must be supplied only through a reviewed release environment.
 - Rollback: remove `src-tauri/`, the desktop npm scripts, and `@tauri-apps/cli`.
+
+## Local resume document readers
+
+The requested resume parsing feature pins `mammoth@1.13.0` (BSD-2-Clause, `mwilliamson/mammoth.js`) and Mozilla `pdfjs-dist@6.5.438` (Apache-2.0). Their browser code reads user-selected bytes in memory and has no API credentials, cloud uploads, telemetry, subprocesses or desktop filesystem permissions. PDF worker/CMap resources are packaged locally. Only the existing AI adapter sends user-authorized resume evidence to the configured provider.
+
+See accepted [ADR 0007](../adr/0007-local-resume-parsing.md) for the dependency behavior, alternatives, limits and removal steps reviewed for the 2.0 release.

@@ -63,9 +63,12 @@ export interface AtomicQuestion {
   tags: string[];
   sourceInterviewIds: string[];
   linkedSyncBlockId: string | null;
+  favorite?: boolean;
   createdAt: string;
   updatedAt: string;
   sample?: boolean;
+  sourceExcerpt?: string;
+  evidenceRefs?: MockInterviewEvidence[];
 }
 
 export interface SyncBlock {
@@ -138,11 +141,80 @@ export interface MockInterviewMessage {
   role: MockInterviewMessageRole;
   content: string;
   createdAt: string;
+  kind?: "ask" | "followup" | "end";
+  competencyId?: string;
+}
+
+export interface MockInterviewEvidence {
+  messageId: string;
+  quote: string;
+  start: number;
+  end: number;
+}
+
+export interface MockInterviewPlanItem {
+  id: string;
+  title: string;
+  focus: string;
+}
+
+export interface MockInterviewTrace {
+  id: string;
+  operation: "turn" | "report";
+  model: string;
+  endpoint: string;
+  promptVersion: string;
+  inputCharacters: number;
+  durationMs: number;
+  attempts: number;
+  materialIds: string[];
+  action?: "ask" | "followup" | "end";
+  mode?: "native" | "unconfirmed" | "fallback";
+  fallbackReason?: string;
+  outcome?: "running" | "completed" | "failed" | "interrupted";
+  budgetReason?: string;
+  tools?: MockInterviewToolTrace[];
+  gaps?: string[];
+  nextFocus?: string;
+}
+
+export interface MockInterviewToolTrace {
+  callId: string;
+  name: string;
+  query: string;
+  status: "ok" | "no_results" | "incomplete" | "error";
+  materialIds: string[];
+  durationMs: number;
+  detail: string;
+}
+
+export interface MockInterviewObservation {
+  competencyId: string;
+  evidenceRefs: MockInterviewEvidence[];
+  evidenceSufficient: boolean;
+  gaps: string[];
+  nextFocus: string;
+}
+
+export interface MockInterviewHarness {
+  version: 1;
+  plan: MockInterviewPlanItem[];
+  model: string;
+  endpoint: string;
+  promptVersion: string;
+  turnStatus: "idle" | "running" | "failed" | "interrupted";
+  reportStatus: "pending" | "running" | "completed" | "failed" | "interrupted";
+  error: string;
+  traces: MockInterviewTrace[];
+  mode?: "native" | "unconfirmed" | "fallback";
+  fallbackReason?: string;
+  observations?: MockInterviewObservation[];
 }
 
 export interface MockInterviewFeedbackItem {
   title: string;
   detail: string;
+  evidenceRefs?: MockInterviewEvidence[];
 }
 
 export interface MockInterviewQuestionReview {
@@ -150,6 +222,8 @@ export interface MockInterviewQuestionReview {
   assessment: string;
   evidence: string;
   suggestion: string;
+  questionMessageId?: string;
+  evidenceRefs?: MockInterviewEvidence[];
 }
 
 export interface MockInterviewFeedback {
@@ -160,6 +234,8 @@ export interface MockInterviewFeedback {
   nextSteps: string[];
   questionReviews: MockInterviewQuestionReview[];
   generatedAt: string;
+  validationWarnings?: string[];
+  evidenceVerified?: boolean;
 }
 
 export interface MockInterviewSession {
@@ -181,6 +257,7 @@ export interface MockInterviewSession {
   interviewId: string | null;
   questionIds: string[];
   feedback: MockInterviewFeedback | null;
+  harness?: MockInterviewHarness;
 }
 
 export interface Preference {
@@ -200,7 +277,7 @@ export interface Workspace {
 }
 
 export interface WorkspaceExport extends Workspace {
-  formatVersion: 10;
+  formatVersion: 11;
   exportedAt: string;
 }
 
@@ -283,4 +360,6 @@ export interface MockInterviewQuestionInput {
   answer: string;
   tags: string[];
   sourceExcerpt: string;
+  questionMessageId?: string;
+  evidenceRefs?: MockInterviewEvidence[];
 }

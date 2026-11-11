@@ -168,7 +168,7 @@ export function AISettingsPanel({
           <Sparkles size={20} aria-hidden="true" />
           <div>
             <strong>AI 解析服务</strong>
-            <small>用于面经拆解、原子问答提取与模拟面试。</small>
+            <small>用于面经拆解、简历经历解析、原子问答提取与模拟面试。</small>
           </div>
         </div>
         <span className={`connection-state state-${testState}`}>

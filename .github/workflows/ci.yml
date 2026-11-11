@@ -52,6 +52,7 @@ jobs:
         run: |
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
           cargo check --locked --manifest-path src-tauri/Cargo.toml
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib share::tests
 
       - name: Build macOS package
         run: npm run desktop:build:macos

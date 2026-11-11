@@ -8,6 +8,7 @@ import {
   Link2,
   Pencil,
   Plus,
+  Upload,
   Trash2,
 } from "lucide-react";
 import {
@@ -23,6 +24,10 @@ import type {
   SyncBlock,
 } from "../domain/types";
 import { Modal } from "./Modal";
+import { ShareButton } from "./Share";
+import type { ShareTarget } from "../domain/share";
+import type { AIProviderConfig, AIResumeCandidate, AIResumeInput } from "../ai/types";
+import { ResumeImport } from "./ResumeImport";
 
 export interface ResumeDiffLine {
   kind: "same" | "added" | "removed";
@@ -301,6 +306,7 @@ interface ResumeCardProps {
   onOpenSync: (id: string) => void;
   onUpdate: (input: CreateResumeExperienceInput) => void;
   onDelete: () => void;
+  onShare: (target: ShareTarget) => void;
 }
 
 function ResumeCard({
@@ -313,6 +319,7 @@ function ResumeCard({
   onOpenSync,
   onUpdate,
   onDelete,
+  onShare,
 }: ResumeCardProps) {
   const [type, setType] = useState(experience.type);
   const [title, setTitle] = useState(experience.title);
@@ -434,21 +441,24 @@ function ResumeCard({
                 .join(" · ") || "组织和时间尚未填写"}
             </p>
           </div>
-          <button
-            className="button secondary"
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggle();
-            }}
-          >
-            {expanded ? (
-              <ChevronDown size={14} aria-hidden="true" />
-            ) : (
-              <Pencil size={14} aria-hidden="true" />
-            )}
-            {expanded ? "收起" : "编辑"}
-          </button>
+          <div className="share-detail-actions" onClick={(event) => event.stopPropagation()}>
+            <ShareButton disabled={hasChanges} onClick={() => onShare({ kind: "resume", id: experience.id })} />
+            <button
+              className="button secondary"
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggle();
+              }}
+            >
+              {expanded ? (
+                <ChevronDown size={14} aria-hidden="true" />
+              ) : (
+                <Pencil size={14} aria-hidden="true" />
+              )}
+              {expanded ? "收起" : "编辑"}
+            </button>
+          </div>
         </header>
         <div className="resume-bullets">
           {experience.bullets.length ? (
@@ -463,6 +473,7 @@ function ResumeCard({
 
       {expanded ? (
         <div className="resume-expanded" onClick={(event) => event.stopPropagation()}>
+          {hasChanges ? <p className="share-draft-hint">应用修改后即可分享最新经历。</p> : null}
           {!showDiff ? (
             <>
               <div className="resume-editor-heading">
@@ -769,6 +780,11 @@ function ResumeCard({
 }
 
 interface ResumePageProps {
+  aiConfig: AIProviderConfig;
+  aiReady: boolean;
+  onOpenSettings: () => void;
+  onParseResume: (input: AIResumeInput, signal: AbortSignal) => Promise<AIResumeCandidate[]>;
+  onImportResume: (inputs: CreateResumeExperienceInput[]) => Promise<void>;
   experiences: ResumeExperience[];
   questions: AtomicQuestion[];
   syncBlocks: SyncBlock[];
@@ -782,9 +798,15 @@ interface ResumePageProps {
     input: CreateResumeExperienceInput,
   ) => void;
   onDelete: (experienceId: string) => void;
+  onShare: (target: ShareTarget) => void;
 }
 
 export function ResumePage({
+  aiConfig,
+  aiReady,
+  onOpenSettings,
+  onParseResume,
+  onImportResume,
   experiences,
   questions,
   syncBlocks,
@@ -795,8 +817,10 @@ export function ResumePage({
   onCreate,
   onUpdate,
   onDelete,
+  onShare,
 }: ResumePageProps) {
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     if (!focusedId) return;
@@ -819,10 +843,16 @@ export function ResumePage({
             用真实经历支撑面试回答，并保持每条关联可追溯。
           </p>
         </div>
-        <button className="button primary" onClick={() => setCreating(true)}>
-          <Plus size={15} aria-hidden="true" />
-          新增经历
-        </button>
+        <div className="page-header-actions">
+          <button className="button secondary" onClick={() => setImporting(true)}>
+            <Upload size={15} aria-hidden="true" />
+            解析简历
+          </button>
+          <button className="button primary" onClick={() => setCreating(true)}>
+            <Plus size={15} aria-hidden="true" />
+            新增经历
+          </button>
+        </div>
       </header>
 
       {experiences.length ? (
@@ -841,6 +871,7 @@ export function ResumePage({
               onOpenSync={onOpenSync}
               onUpdate={(input) => onUpdate(experience.id, input)}
               onDelete={() => onDelete(experience.id)}
+              onShare={onShare}
             />
           ))}
         </div>
@@ -849,12 +880,28 @@ export function ResumePage({
           <FileUser size={30} strokeWidth={1.4} aria-hidden="true" />
           <h2>还没有简历经历</h2>
           <p>先录入一段实习、工作或项目经历，再把它关联到真实问答。</p>
-          <button className="button primary" onClick={() => setCreating(true)}>
-            <Plus size={15} aria-hidden="true" />
-            新增经历
-          </button>
+          <div className="page-header-actions">
+            <button className="button secondary" onClick={() => setImporting(true)}>
+              <Upload size={15} aria-hidden="true" /> 解析简历
+            </button>
+            <button className="button primary" onClick={() => setCreating(true)}>
+              <Plus size={15} aria-hidden="true" /> 新增经历
+            </button>
+          </div>
         </div>
       )}
+
+      {importing ? (
+        <ResumeImport
+          config={aiConfig}
+          aiReady={aiReady}
+          experiences={experiences}
+          onParse={onParseResume}
+          onImport={onImportResume}
+          onOpenSettings={onOpenSettings}
+          onClose={() => setImporting(false)}
+        />
+      ) : null}
 
       {creating ? (
         <Modal

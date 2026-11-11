@@ -1,6 +1,6 @@
 {
   "name": "interview-atlas",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -26,6 +26,8 @@
     "@tauri-apps/api": "^2.12.0",
     "@tauri-apps/plugin-opener": "2.7.0",
     "lucide-react": "1.49.0",
+    "mammoth": "1.13.0",
+    "pdfjs-dist": "6.5.438",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

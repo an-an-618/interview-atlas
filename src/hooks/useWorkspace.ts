@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createDemoWorkspace } from "../data/demo";
 import { applyExtractionTask, recoverExtractionTasks } from "../domain/extractionTasks";
+import { recoverMockInterviewRuns } from "../domain/mockInterviewHarness";
+import { updateMockInterviewHarness } from "../domain/workspace";
+import type { MockInterviewHarness, MockInterviewMessage } from "../domain/types";
 import {
   indexedDbRepository,
   type WorkspaceRepository,
@@ -27,6 +30,7 @@ import {
   addMockInterview,
   addQuestion,
   addResumeExperience,
+  addResumeExperiences,
   addStandaloneQuestion,
   addSyncBlock,
   appendMockInterviewMessage,
@@ -42,6 +46,7 @@ import {
   resolveAIReviewSync,
   resolveAllAIReviewCandidates,
   saveInterviewAIReview,
+  setQuestionFavorite,
   updateAIReviewCandidate,
   updateResumeExperience,
   updateInterview,
@@ -98,7 +103,7 @@ export function useWorkspace(
       .load()
       .then((saved) => {
         if (!active) return;
-        const recovered = recoverExtractionTasks(saved);
+        const recovered = recoverMockInterviewRuns(recoverExtractionTasks(saved));
         workspaceRef.current = recovered;
         setWorkspace(recovered);
       })
@@ -157,13 +162,20 @@ export function useWorkspace(
       sessionId: string,
       role: MockInterviewMessageRole,
       content: string,
+      metadata?: Pick<MockInterviewMessage, "kind" | "competencyId">,
     ) => {
       const result = appendMockInterviewMessage(
         workspaceRef.current,
         sessionId,
         role,
         content,
+        metadata,
       );
+      await persistBeforeCommit(result.workspace);
+      return result.session;
+    },
+    updateMockInterviewHarness: async (sessionId: string, harness: MockInterviewHarness) => {
+      const result = updateMockInterviewHarness(workspaceRef.current, sessionId, harness);
       await persistBeforeCommit(result.workspace);
       return result.session;
     },
@@ -316,6 +328,14 @@ export function useWorkspace(
       );
       replaceWorkspace(result.workspace);
       return result.question;
+    },
+    setQuestionFavorite: (questionId: string, favorite: boolean) => {
+      void replaceWorkspace(setQuestionFavorite(workspaceRef.current, questionId, favorite));
+    },
+    importResumeExperiences: async (inputs: CreateResumeExperienceInput[]) => {
+      const result = addResumeExperiences(workspaceRef.current, inputs);
+      await persistBeforeCommit(result.workspace, "简历经历保存失败，请重试。");
+      return result.experiences;
     },
     createResumeExperience: (input: CreateResumeExperienceInput) => {
       const result = addResumeExperience(workspaceRef.current, input);

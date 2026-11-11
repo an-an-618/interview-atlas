@@ -646,6 +646,7 @@ export function appendMockInterviewMessage(
   sessionId: string,
   role: MockInterviewMessageRole,
   content: string,
+  metadata: Pick<MockInterviewMessage, "kind" | "competencyId"> = {},
 ): { workspace: Workspace; session: MockInterviewSession } {
   const session = workspace.mockInterviews.find((item) => item.id === sessionId);
   if (!session) throw new Error("Mock interview not found");
@@ -659,6 +660,7 @@ export function appendMockInterviewMessage(
     role,
     content: content.trim().slice(0, 20_000),
     createdAt: now,
+    ...(role === "interviewer" ? metadata : {}),
   };
   const nextSession: MockInterviewSession = {
     ...session,
@@ -674,6 +676,15 @@ export function appendMockInterviewMessage(
     },
     session: nextSession,
   };
+}
+
+export function updateMockInterviewHarness(
+  workspace: Workspace, sessionId: string, harness: import("./types").MockInterviewHarness,
+): { workspace: Workspace; session: MockInterviewSession } {
+  const current = workspace.mockInterviews.find((item) => item.id === sessionId);
+  if (!current) throw new Error("Mock interview not found");
+  const session = { ...current, harness, updatedAt: timestamp() };
+  return { workspace: { ...workspace, mockInterviews: workspace.mockInterviews.map((item) => item.id === sessionId ? session : item) }, session };
 }
 
 function formatMockInterviewTranscript(session: MockInterviewSession): string {
@@ -788,6 +799,7 @@ export function applyMockInterviewAnalysis(
       ].slice(0, 4),
       sourceInterviewIds: [session.interviewId!],
       linkedSyncBlockId: null,
+      ...(input.evidenceRefs ? { evidenceRefs: input.evidenceRefs, sourceExcerpt: input.sourceExcerpt } : {}),
       createdAt: now,
       updatedAt: now,
     }));
@@ -844,6 +856,24 @@ export function addStandaloneQuestion(
       questions: [question, ...workspace.questions],
     },
     question,
+  };
+}
+
+export function setQuestionFavorite(
+  workspace: Workspace,
+  questionId: string,
+  favorite: boolean,
+): Workspace {
+  const question = workspace.questions.find((item) => item.id === questionId);
+  if (!question) throw new Error("Question not found");
+  if (Boolean(question.favorite) === favorite) return workspace;
+  return {
+    ...workspace,
+    questions: workspace.questions.map((item) =>
+      item.id === questionId
+        ? { ...item, favorite, updatedAt: timestamp() }
+        : item,
+    ),
   };
 }
 
@@ -916,6 +946,20 @@ export function addResumeExperience(
       resumeExperiences: [experience, ...workspace.resumeExperiences],
     },
     experience,
+  };
+}
+
+export function addResumeExperiences(
+  workspace: Workspace,
+  inputs: CreateResumeExperienceInput[],
+): { workspace: Workspace; experiences: ResumeExperience[] } {
+  if (!inputs.length || inputs.length > 40 || inputs.some((input) => !input.title.trim())) {
+    throw new Error("请选择 1 至 40 段有标题的经历后导入。");
+  }
+  const experiences = inputs.map((input) => addResumeExperience(workspace, input).experience);
+  return {
+    workspace: { ...workspace, resumeExperiences: [...experiences, ...workspace.resumeExperiences] },
+    experiences,
   };
 }
 

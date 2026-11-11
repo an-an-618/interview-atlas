@@ -29,6 +29,10 @@ import {
 import {
   DEFAULT_MOCK_INTERVIEWER_PROMPT,
 } from "../ai/openAICompatibleClient";
+import { MockInterviewRuntime, type MockInterviewRuntimeOptions } from "../ai/mockInterviewRuntime";
+import { normalizeMockCompany } from "../ai/mockInterviewContext";
+import { getMockInterviewProgress } from "../domain/mockInterviewHarness";
+import type { MockInterviewHarness, MockInterviewMessage } from "../domain/types";
 import mockInterviewScene from "../assets/mock-interview-scene.png";
 import mockInterviewer from "../assets/mock-interviewer.png";
 import type {
@@ -58,7 +62,9 @@ interface MockInterviewPageProps {
     sessionId: string,
     role: MockInterviewMessageRole,
     content: string,
+    metadata?: Pick<MockInterviewMessage, "kind" | "competencyId">,
   ) => Promise<MockInterviewSession>;
+  onUpdateHarness: (sessionId: string, harness: MockInterviewHarness) => Promise<MockInterviewSession>;
   onEnd: (
     sessionId: string,
     endedBy: "ai" | "user",
@@ -129,8 +135,8 @@ function MockInterviewLobby({
     () =>
       workspace.interviews.filter(
         (interview) =>
-          interview.company.trim().toLocaleLowerCase("zh-CN") ===
-          company.trim().toLocaleLowerCase("zh-CN"),
+          !interview.simulated && !interview.sample &&
+          normalizeMockCompany(interview.company) === normalizeMockCompany(company),
       ).length,
     [company, workspace.interviews],
   );
@@ -138,8 +144,8 @@ function MockInterviewLobby({
     () =>
       workspace.interviews.filter(
         (interview) =>
-          interview.company.trim().toLocaleLowerCase("zh-CN") ===
-            company.trim().toLocaleLowerCase("zh-CN") &&
+          !interview.simulated && !interview.sample &&
+          normalizeMockCompany(interview.company) === normalizeMockCompany(company) &&
           interview.role.trim().toLocaleLowerCase("zh-CN") ===
             role.trim().toLocaleLowerCase("zh-CN"),
       ).length,
@@ -493,8 +499,9 @@ function MockInterviewLobby({
           )}
         </footer>
         <p className="mock-data-note">
-          发起请求时会发送上述输入，以及最多 6 场相关历史面试、36
-          条问答、24 个聚合块和 16 条简历经历；API Key 仍只保留在当前会话。
+          每轮按岗位与当前回答选择素材，最多参考 4 场真实面试、10 条问答、
+          6 个聚合块、4 条简历经历及 2 场已核验练习建议，材料总量受限。
+          API Key 仍只保留在当前会话。
         </p>
         {error ? (
           <p className="mock-inline-error" role="alert">
@@ -528,9 +535,8 @@ function MockInterviewChat({
   onBack: () => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
-  const answerCount = session.messages.filter(
-    (message) => message.role === "candidate",
-  ).length;
+  const progress = getMockInterviewProgress(session);
+  const pendingResponse = session.messages.at(-1)?.role === "candidate";
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
@@ -557,7 +563,6 @@ function MockInterviewChat({
         <button
           className="button secondary"
           type="button"
-          disabled={busy}
           onClick={onEnd}
         >
           <CircleStop size={15} aria-hidden="true" />
@@ -579,7 +584,7 @@ function MockInterviewChat({
           <div>
             <dt>进度</dt>
             <dd>
-              {answerCount}/{session.targetQuestionCount}
+              {progress.mainAnswered}/{session.targetQuestionCount} 主问题
             </dd>
           </div>
           <div>
@@ -588,6 +593,25 @@ function MockInterviewChat({
           </div>
         </dl>
       </section>
+
+      {session.harness ? (
+        <div className="mock-plan-progress" aria-label="面试考察进度">
+          <span>追问 {progress.followups} 次</span>
+          {progress.plan.map((item) => {
+            const asked = session.messages.some((m) => m.role === "interviewer" && m.competencyId === item.id && m.kind !== "end");
+            const answered = progress.answeredIds.includes(item.id);
+            const observation = session.harness?.observations?.find((o) => o.competencyId === item.id);
+            return (
+              <span key={item.id} className={answered ? "observed" : ""}>
+                {answered ? "已答 · " : asked ? "已问 · " : "待问 · "}{item.title}
+                {session.status === "completed" && observation?.evidenceSufficient ? " · 证据已核验" : ""}
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <MockInterviewReferences session={session} />
 
       <div className="mock-conversation" aria-live="polite">
         {session.messages.map((message) => (
@@ -619,12 +643,12 @@ function MockInterviewChat({
             面试官正在组织下一问
           </div>
         ) : null}
-        {!session.messages.length && !busy ? (
+        {(!session.messages.length || pendingResponse) && !busy && !error ? (
           <div className="mock-chat-retry">
-            <p>第一问尚未生成。</p>
+            <p>{pendingResponse ? "回答已保存，继续生成下一问。" : "第一问尚未生成。"}</p>
             <button className="button primary" type="button" onClick={onRetry}>
               <Sparkles size={15} aria-hidden="true" />
-              生成第一问
+              {pendingResponse ? "继续面试" : "生成第一问"}
             </button>
           </div>
         ) : null}
@@ -648,7 +672,7 @@ function MockInterviewChat({
             placeholder="输入你的回答…"
             maxLength={20000}
             rows={3}
-            disabled={busy || Boolean(error) || !session.messages.length}
+            disabled={busy || Boolean(error) || !progress.waitingForAnswer}
             aria-label="输入面试回答"
           />
           <button
@@ -659,7 +683,7 @@ function MockInterviewChat({
               busy ||
               Boolean(error) ||
               !answer.trim() ||
-              !session.messages.length
+              !progress.waitingForAnswer
             }
             onClick={onSend}
           >
@@ -668,6 +692,49 @@ function MockInterviewChat({
         </div>
         <span>Enter 发送 · Shift + Enter 换行</span>
       </footer>
+    </div>
+  );
+}
+
+function MockInterviewReferences({ session }: { session: MockInterviewSession }) {
+  const harness = session.harness;
+  if (!harness) return null;
+  const progress = getMockInterviewProgress(session);
+  return (
+    <div className="mock-reference-mode">
+      <span>参考方式 · {harness.mode === "native" ? "按需取材" : harness.mode === "fallback" ? "应用预选材料" : "按需取材待确认"}</span>
+      {harness.mode === "fallback" ? <p>{harness.fallbackReason} {session.status === "active" ? "面试可以继续。" : ""}</p> : null}
+      {session.status === "completed" ? (
+        <div className="mock-plan-progress" aria-label="面试考察与证据状态">
+          {progress.plan.map((item) => {
+            const asked = session.messages.some((m) => m.role === "interviewer" && m.competencyId === item.id && m.kind !== "end");
+            const answered = progress.answeredIds.includes(item.id);
+            const sufficient = harness.observations?.find((o) => o.competencyId === item.id)?.evidenceSufficient;
+            return <span key={item.id}>{item.title} · {answered ? "已答" : asked ? "已问" : "未问"} · {sufficient ? "证据已核验" : "信息不足"}</span>;
+          })}
+        </div>
+      ) : null}
+      {session.status === "completed" && harness.traces.length ? (
+        <details className="mock-reference-log">
+          <summary>查看本场取材记录</summary>
+          <p>材料只用于准备问题。证据核验确认原话与来源，充分性由模型观察，不表示已经掌握能力。</p>
+          {harness.traces.filter((t) => t.operation === "turn").map((trace, index) => (
+            <article key={trace.id}>
+              <strong>请求 {index + 1} · {trace.action === "followup" ? "追问" : trace.action === "end" ? "结束" : trace.action === "ask" ? "主问题" : "未完成"} · {(trace.durationMs / 1000).toFixed(1)} 秒</strong>
+              <span>{trace.attempts} 次模型请求 · {trace.tools?.length ?? 0} 次工具调用</span>
+              {trace.tools?.map((tool) => (
+                <p key={tool.callId}>
+                  <code>{tool.name}</code> · {({ ok: "已找到", no_results: "无结果", incomplete: "部分原文", error: "调用错误" })[tool.status]}
+                  <br />{tool.query}<br />{tool.materialIds.join("、") || tool.detail}
+                </p>
+              ))}
+              {trace.budgetReason ? <p>{trace.budgetReason}</p> : null}
+              {trace.gaps?.length ? <p>待澄清：{trace.gaps.join("；")}</p> : null}
+              {trace.nextFocus ? <p>下一步：{trace.nextFocus}</p> : null}
+            </article>
+          ))}
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -736,6 +803,8 @@ function MockInterviewReport({
         </span>
       </header>
 
+      <MockInterviewReferences session={session} />
+
       {analyzing ? (
         <section className="mock-report-loading">
           <LoaderCircle className="spin" size={24} aria-hidden="true" />
@@ -746,6 +815,11 @@ function MockInterviewReport({
         </section>
       ) : feedback ? (
         <>
+          {feedback.validationWarnings?.length ? (
+            <div className="mock-report-validation" role="status">
+              部分反馈未通过原文核验，已排除：{feedback.validationWarnings.join(" ")}
+            </div>
+          ) : null}
           <section className="mock-report-summary">
             <span>总体观察</span>
             <h2>{feedback.summary}</h2>
@@ -874,6 +948,7 @@ export function MockInterviewPage({
   onFocus,
   onCreate,
   onAppendMessage,
+  onUpdateHarness,
   onEnd,
   onApplyAnalysis,
   onOpenSettings,
@@ -883,128 +958,42 @@ export function MockInterviewPage({
   const [busy, setBusy] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const turnControllerRef = useRef<AbortController | null>(null);
-  const analysisControllerRef = useRef<AbortController | null>(null);
+  const runtimeRef = useRef<MockInterviewRuntime | null>(null);
+  const runtimeOptionsRef = useRef<MockInterviewRuntimeOptions>(null!);
   const session =
     workspace.mockInterviews.find((item) => item.id === focusedId) ?? null;
   const sessions = [...workspace.mockInterviews].sort((left, right) =>
     right.startedAt.localeCompare(left.startedAt),
   );
 
-  useEffect(
-    () => () => {
-      turnControllerRef.current?.abort();
-      analysisControllerRef.current?.abort();
-    },
-    [],
-  );
-
-  const generateReport = async (completed: MockInterviewSession) => {
-    if (analysisControllerRef.current || completed.feedback) return;
-    const controller = new AbortController();
-    analysisControllerRef.current = controller;
-    setAnalyzing(true);
-    setError(null);
-    try {
-      const report = await client.generateMockInterviewReport(
-        config,
-        apiKey,
-        completed,
-        controller.signal,
-      );
-      await onApplyAnalysis(completed.id, report.feedback, report.questions);
-    } catch (reason) {
-      if (!controller.signal.aborted) {
-        setError(
-          reason instanceof Error ? reason.message : "反馈报告生成失败，请重试。",
-        );
-      }
-    } finally {
-      if (analysisControllerRef.current === controller) {
-        analysisControllerRef.current = null;
-        setAnalyzing(false);
-      }
-    }
+  runtimeOptionsRef.current = {
+    client, config, apiKey, workspace, create: onCreate, append: onAppendMessage,
+    updateHarness: onUpdateHarness, end: onEnd, analyze: onApplyAnalysis,
+    focus: (id) => { setAnswer(""); setError(null); onFocus(id); },
+    answerSaved: () => setAnswer(""),
+    changed: (state) => { setBusy(state.busy); setAnalyzing(state.analyzing); setError(state.error); },
   };
-
-  const finish = async (
-    current: MockInterviewSession,
-    endedBy: "ai" | "user",
-    endReason: string,
-  ) => {
-    const result = await onEnd(current.id, endedBy, endReason);
-    await generateReport(result.session);
-  };
-
-  const requestInterviewerTurn = async (current: MockInterviewSession) => {
-    if (busy || current.status !== "active") return;
-    const controller = new AbortController();
-    turnControllerRef.current = controller;
-    setBusy(true);
-    setError(null);
-    try {
-      const turn = await client.continueMockInterview(
-        config,
-        apiKey,
-        { session: current, workspace },
-        controller.signal,
-      );
-      const updated = await onAppendMessage(
-        current.id,
-        "interviewer",
-        turn.message,
-      );
-      if (turn.shouldEnd) {
-        await finish(updated, "ai", turn.endReason);
-      }
-    } catch (reason) {
-      if (!controller.signal.aborted) {
-        setError(
-          reason instanceof Error ? reason.message : "面试官响应失败，请重试。",
-        );
-      }
-    } finally {
-      if (turnControllerRef.current === controller) {
-        turnControllerRef.current = null;
-      }
-      setBusy(false);
-    }
-  };
+  useEffect(() => {
+    const runtime = new MockInterviewRuntime(() => runtimeOptionsRef.current);
+    runtimeRef.current = runtime;
+    return () => { runtime.dispose(); runtimeRef.current = null; };
+  }, []);
 
   const start = async (input: CreateMockInterviewInput) => {
     if (!configured) {
       onOpenSettings();
       return;
     }
-    const created = await onCreate(input);
-    onFocus(created.id);
-    await requestInterviewerTurn(created);
+    await runtimeRef.current?.start(input);
   };
 
   const sendAnswer = async () => {
     if (!session || !answer.trim() || busy) return;
-    const submittedAnswer = answer;
-    setBusy(true);
-    setError(null);
-    try {
-      const next = await onAppendMessage(
-        session.id,
-        "candidate",
-        submittedAnswer,
-      );
-      setAnswer("");
-      setBusy(false);
-      await requestInterviewerTurn(next);
-    } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "回答保存失败，请重试。",
-      );
-      setBusy(false);
-    }
+    await runtimeRef.current?.submit(session.id, answer);
   };
 
   const endByUser = async () => {
-    if (!session || busy) return;
+    if (!session) return;
     if (
       !window.confirm(
         "确定结束本次模拟面试吗？当前对话会保存到面试记录，并生成反馈报告。",
@@ -1012,17 +1001,7 @@ export function MockInterviewPage({
     ) {
       return;
     }
-    setBusy(true);
-    setError(null);
-    try {
-      await finish(session, "user", "用户主动结束模拟面试");
-    } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "面试保存失败，请重试。",
-      );
-    } finally {
-      setBusy(false);
-    }
+    await runtimeRef.current?.end(session.id);
   };
 
   if (!session) {
@@ -1046,8 +1025,8 @@ export function MockInterviewPage({
       <MockInterviewReport
         session={session}
         analyzing={analyzing}
-        error={error}
-        onRetry={() => void generateReport(session)}
+        error={error || session.harness?.error || null}
+        onRetry={() => void runtimeRef.current?.retry(session.id)}
         onBack={() => {
           setError(null);
           onFocus(null);
@@ -1061,11 +1040,11 @@ export function MockInterviewPage({
     <MockInterviewChat
       session={session}
       busy={busy}
-      error={error}
+      error={error || session.harness?.error || null}
       answer={answer}
       onAnswerChange={setAnswer}
       onSend={() => void sendAnswer()}
-      onRetry={() => void requestInterviewerTurn(session)}
+      onRetry={() => void runtimeRef.current?.retry(session.id)}
       onEnd={() => void endByUser()}
       onBack={() => {
         setError(null);

@@ -3,6 +3,8 @@ import type {
   MockInterviewFeedback,
   MockInterviewQuestionInput,
   MockInterviewSession,
+  MockInterviewTrace,
+  MockInterviewObservation,
   SyncBlock,
   Workspace,
 } from "../domain/types";
@@ -51,6 +53,19 @@ export interface AIExtractionInput {
   syncBlocks: SyncBlock[];
 }
 
+export type AIResumeInput =
+  | { kind: "text"; text: string }
+  | { kind: "images"; imageDataUrls: string[] };
+
+export interface AIResumeCandidate {
+  type: string;
+  title: string;
+  organization: string;
+  period: string;
+  bullets: string[];
+  sourceExcerpt: string;
+}
+
 export interface AIExtractionProgress {
   completed: number;
   total: number;
@@ -61,20 +76,32 @@ export interface AIExtractionProgress {
 export interface AIMockInterviewTurnInput {
   session: MockInterviewSession;
   workspace: Workspace;
+  onTrace?: (trace: MockInterviewTrace) => Promise<void>;
 }
 
 export interface AIMockInterviewTurn {
   message: string;
   shouldEnd: boolean;
   endReason: string;
+  action: "ask" | "followup" | "end";
+  competencyId: string;
+  trace?: MockInterviewTrace;
+  observation?: MockInterviewObservation;
 }
 
 export interface AIMockInterviewReport {
   feedback: MockInterviewFeedback;
   questions: MockInterviewQuestionInput[];
+  trace?: MockInterviewTrace;
 }
 
 export interface AIClient {
+  extractResume(
+    config: AIProviderConfig,
+    apiKey: string,
+    input: AIResumeInput,
+    signal?: AbortSignal,
+  ): Promise<AIResumeCandidate[]>;
   testConnection(
     config: AIProviderConfig,
     apiKey: string,
