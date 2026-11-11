@@ -12,12 +12,22 @@
 
 ![Interview Atlas overview](docs/assets/interview-atlas-overview.png)
 
+## 2.0 · Stationery Workbench
+
+This major update brings preparation, practice and sharing into a warm stationery interface with consistent green controls:
+
+- Responsive home workbench with portrait flashcards, flip, swipe, trackpad, keyboard and animated shuffle.
+- Recoverable mock-interview agent with readonly local knowledge tools, validated question/followup actions and reports grounded in saved candidate answers.
+- Reviewed experience import from Word, text PDFs, TXT/Markdown and optional resume images.
+- Full-content 1080 × 1440 stationery PNG sharing for Q&A, aggregate blocks, experiences and interviews, with pagination and batch downloads.
+- Workspace backup v11 with restore support for v1–v10. See [CHANGELOG](CHANGELOG.md) for the complete release.
+
 ## What it does
 
-Interview Atlas preserves the original interview record as evidence, extracts concrete atomic Q&A instances, and connects recurring questions to synchronized blocks that hold a stable answer. Ordinary AI extraction remains reviewable; a mock interview explicitly started by the user automatically saves its transcript and atomic Q&A without creating synchronized-block links.
+Interview Atlas preserves the original interview record as evidence, extracts concrete atomic Q&A instances, and groups similar Q&A in aggregate blocks that hold a reusable answer. Ordinary AI extraction remains reviewable; a mock interview explicitly started by the user automatically saves its transcript and atomic Q&A without creating aggregate-block links.
 
 ```text
-Interview record → Atomic Q&A → Synchronized block → Review
+Interview record → Atomic Q&A → Aggregate block → Review
         │                │               │
       evidence        instance      stable answer
 ```
@@ -31,10 +41,10 @@ The current application includes:
 - interview import, manual structuring, queued full-transcript AI extraction, and staged review;
 - interview editing and saved organization by company, role, round, date, tag, or custom collection;
 - standalone atomic Q&A with structured answer points and inline editing;
-- synchronized blocks with explicit, bidirectional relationships;
-- global search plus synchronized-block favorites, filtering, and relationship-count sorting;
+- aggregate blocks with explicit, bidirectional relationships;
+- global search plus aggregate-block favorites, filtering, and relationship-count sorting;
 - resume experiences with CRUD, relationship management, and diff preview;
-- a daily question, a synchronized-block favorites folder, and decoupled Q&A/link review;
+- a daily question, an aggregate-block favorites folder, and decoupled Q&A/link review;
 - AI mock interviews grounded in prior interviews, resume evidence, and Q&A, with post-interview feedback and automatic capture;
 - dual-track macOS recording for system and microphone audio, with optional Xfyun transcription;
 - validated versioned JSON export and restore, explicit demo data, and workspace deletion;
@@ -50,11 +60,11 @@ The current application includes:
 
 ## Install on macOS
 
-The 1.1 desktop release supports Apple Silicon Macs running macOS 15 or later.
+The 2.0 desktop release supports Apple Silicon Macs running macOS 15 or later.
 
 The current source uses the new Chinese name, `见字·如面`; previously published installers may still display `千面`. The English name remains Interview Atlas.
 
-1. Open the [latest GitHub Release](https://github.com/an-an-618/interview-atlas/releases/latest) and download `Interview-Atlas_1.1.0_aarch64.dmg` plus `SHA256SUMS-macos.txt`.
+1. Export a JSON backup from Settings before upgrading. Open the [latest GitHub Release](https://github.com/an-an-618/interview-atlas/releases/latest) and download `Interview-Atlas_2.0.0_aarch64.dmg` plus `SHA256SUMS-macos.txt`.
 2. Open the DMG and drag `见字·如面.app` onto the `Applications` shortcut.
 3. The release is not Apple-notarized yet. For the first launch, Control-click `见字·如面.app` in Finder, choose **Open**, then confirm **Open** again. If needed, use **System Settings → Privacy & Security → Open Anyway**.
 4. Later, launch 见字·如面 from Applications, Spotlight, Launchpad, or the Dock.
@@ -69,7 +79,7 @@ The desktop app and browser version use separate IndexedDB workspaces and do not
 
 ## Install on Windows
 
-The 1.1 desktop release targets x64 Windows 10 and 11. Open the [latest GitHub Release](https://github.com/an-an-618/interview-atlas/releases/latest) and run `Interview-Atlas_1.1.0_x64-setup.exe`. An MSI is available for managed installation. Dual-track recording currently requires macOS 15.
+The 2.0 desktop release targets x64 Windows 10 and 11. Export a JSON backup before upgrading, then open the [latest GitHub Release](https://github.com/an-an-618/interview-atlas/releases/latest) and run `Interview-Atlas_2.0.0_x64-setup.exe`. An MSI is available for managed installation. Dual-track recording currently requires macOS 15.
 
 The release is not Authenticode-signed, so Microsoft Defender SmartScreen may warn on first launch. See the [Windows distribution guide](docs/engineering/windows-distribution.md) for build, installation, and signing details.
 
@@ -122,4 +132,4 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. Security and p
 
 ## Scope
 
-The 1.1 desktop release supports Apple Silicon macOS and x64 Windows and remains a local-first application rather than a hosted service. Linux, Intel/Universal macOS, production signing, notarization, and automatic updates remain future work. Cloud sync, collaboration, automatic applications, screen-video capture, video, and real-time transcription remain out of scope.
+The 2.0 desktop release supports Apple Silicon macOS and x64 Windows and remains a local-first application rather than a hosted service. Linux, Intel/Universal macOS, production signing, notarization, and automatic updates remain future work. Cloud sync, collaboration, automatic applications, screen-video capture, video, and real-time transcription remain out of scope.

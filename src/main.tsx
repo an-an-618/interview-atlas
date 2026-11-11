@@ -9,6 +9,7 @@ import "@fontsource/source-serif-4/latin-400-italic.css";
 import "@fontsource/source-serif-4/latin-500.css";
 import App from "./App";
 import "./styles.css";
+import "./theme.css";
 
 const root = document.getElementById("root");
 

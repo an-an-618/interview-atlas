@@ -5,6 +5,8 @@ import type {
   InterviewAIReview,
   InterviewOrganization,
   MockInterviewFeedback,
+  MockInterviewHarness,
+  MockInterviewEvidence,
   MockInterviewSession,
   ResumeExperience,
   ReviewEvent,
@@ -14,7 +16,7 @@ import type {
 import { formatAnswer, migrateLegacyAnswer } from "../domain/answerFormat";
 
 export const MAX_WORKSPACE_IMPORT_BYTES = 25 * 1024 * 1024;
-const supportedFormatVersions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+const supportedFormatVersions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const;
 
 type JsonRecord = Record<string, unknown>;
 type SupportedFormatVersion = (typeof supportedFormatVersions)[number];
@@ -232,6 +234,7 @@ function parseQuestion(
   formatVersion: SupportedFormatVersion,
 ): AtomicQuestion {
   const sample = readOptionalBoolean(record, "sample", path);
+  const favorite = readOptionalBoolean(record, "favorite", path);
   const notes =
     formatVersion < 4
       ? (readOptionalString(record, "notes", path) ?? "")
@@ -258,6 +261,9 @@ function parseQuestion(
     createdAt: readString(record, "createdAt", path),
     updatedAt: readString(record, "updatedAt", path),
     ...(sample === undefined ? {} : { sample }),
+    ...(favorite === undefined ? {} : { favorite }),
+    ...(record.sourceExcerpt === undefined ? {} : { sourceExcerpt: readString(record, "sourceExcerpt", path) }),
+    ...parseOptionalEvidence(record, path),
   };
 }
 
@@ -408,6 +414,7 @@ function parseFeedbackItem(record: JsonRecord, path: string) {
   return {
     title: readString(record, "title", path),
     detail: readString(record, "detail", path),
+    ...parseOptionalEvidence(record, path),
   };
 }
 
@@ -417,6 +424,8 @@ function parseQuestionReview(record: JsonRecord, path: string) {
     assessment: readString(record, "assessment", path),
     evidence: readString(record, "evidence", path),
     suggestion: readString(record, "suggestion", path),
+    ...(record.questionMessageId === undefined ? {} : { questionMessageId: readString(record, "questionMessageId", path) }),
+    ...parseOptionalEvidence(record, path),
   };
 }
 
@@ -447,6 +456,75 @@ function parseMockInterviewFeedback(
       parseQuestionReview,
     ),
     generatedAt: readString(record, "generatedAt", path),
+    ...(record.validationWarnings === undefined ? {} : { validationWarnings: readStringArray(record, "validationWarnings", path) }),
+    ...(record.evidenceVerified === undefined ? {} : { evidenceVerified: readBoolean(record, "evidenceVerified", path) }),
+  };
+}
+
+function parseOptionalEvidence(record: JsonRecord, path: string): { evidenceRefs?: MockInterviewEvidence[] } {
+  if (record.evidenceRefs === undefined) return {};
+  return { evidenceRefs: readObjectArray(record, "evidenceRefs", path, (ref, refPath) => ({
+    messageId: readNonEmptyString(ref, "messageId", refPath),
+    quote: readNonEmptyString(ref, "quote", refPath),
+    start: readNumber(ref, "start", refPath), end: readNumber(ref, "end", refPath),
+  })) };
+}
+
+function parseMockHarness(record: JsonRecord, path: string): MockInterviewHarness {
+  if (record.version !== 1) fail(`${path}.version`, "不支持的面试运行版本。");
+  const plan = readObjectArray(record, "plan", path, (item, itemPath) => ({
+    id: readNonEmptyString(item, "id", itemPath), title: readNonEmptyString(item, "title", itemPath),
+    focus: readString(item, "focus", itemPath),
+  }));
+  if (!plan.length || plan.length > 5) fail(`${path}.plan`, "需要 1–5 个考察主题。");
+  assertUnique(plan.map((item) => item.id), `${path}.plan`);
+  const traces = readObjectArray(record, "traces", path, (item, itemPath) => ({
+    id: readNonEmptyString(item, "id", itemPath),
+    operation: readEnum(item, "operation", ["turn", "report"] as const, itemPath),
+    model: readString(item, "model", itemPath), endpoint: readString(item, "endpoint", itemPath),
+    promptVersion: readString(item, "promptVersion", itemPath),
+    inputCharacters: readNumber(item, "inputCharacters", itemPath),
+    durationMs: readNumber(item, "durationMs", itemPath), attempts: readNumber(item, "attempts", itemPath),
+    materialIds: readStringArray(item, "materialIds", itemPath),
+    ...(item.action === undefined ? {} : { action: readEnum(item, "action", ["ask", "followup", "end"] as const, itemPath) }),
+    ...(item.mode === undefined ? {} : { mode: readEnum(item, "mode", ["native", "unconfirmed", "fallback"] as const, itemPath) }),
+    ...(item.fallbackReason === undefined ? {} : { fallbackReason: readString(item, "fallbackReason", itemPath) }),
+    ...(item.outcome === undefined ? {} : { outcome: readEnum(item, "outcome", ["running", "completed", "failed", "interrupted"] as const, itemPath) }),
+    ...(item.budgetReason === undefined ? {} : { budgetReason: readString(item, "budgetReason", itemPath) }),
+    ...(item.gaps === undefined ? {} : { gaps: readStringArray(item, "gaps", itemPath) }),
+    ...(item.nextFocus === undefined ? {} : { nextFocus: readString(item, "nextFocus", itemPath) }),
+    ...(item.tools === undefined ? {} : { tools: readObjectArray(item, "tools", itemPath, (tool, toolPath) => ({
+      callId: readNonEmptyString(tool, "callId", toolPath), name: readString(tool, "name", toolPath),
+      query: readString(tool, "query", toolPath), detail: readString(tool, "detail", toolPath),
+      status: readEnum(tool, "status", ["ok", "no_results", "incomplete", "error"] as const, toolPath),
+      materialIds: readStringArray(tool, "materialIds", toolPath), durationMs: readNumber(tool, "durationMs", toolPath),
+    })) }),
+  }));
+  if (traces.length > 80) fail(`${path}.traces`, "运行记录数量超过上限。");
+  if (traces.some((t) => (t.tools?.length ?? 0) > 3 || (t.gaps?.length ?? 0) > 6 ||
+      [t.durationMs, t.attempts, t.inputCharacters, ...t.tools?.map((c) => c.durationMs) ?? []].some((n) => !Number.isInteger(n) || n < 0))) {
+    fail(`${path}.traces`, "运行记录超出合法范围。");
+  }
+  const observations = record.observations === undefined ? undefined : readObjectArray(record, "observations", path, (item, itemPath) => ({
+    competencyId: readNonEmptyString(item, "competencyId", itemPath),
+    evidenceSufficient: readBoolean(item, "evidenceSufficient", itemPath),
+    evidenceRefs: parseOptionalEvidence(item, itemPath).evidenceRefs ?? [],
+    gaps: readStringArray(item, "gaps", itemPath), nextFocus: readString(item, "nextFocus", itemPath),
+  }));
+  if (observations) {
+    assertUnique(observations.map((o) => o.competencyId), `${path}.observations`);
+    if (observations.length > 5 || observations.some((o) => !plan.some((p) => p.id === o.competencyId) ||
+        o.gaps.length > 6 || o.evidenceSufficient && (!o.evidenceRefs.length || o.gaps.length))) fail(`${path}.observations`, "主题或证据状态无效。");
+  }
+  return {
+    version: 1, plan, model: readString(record, "model", path), endpoint: readString(record, "endpoint", path),
+    promptVersion: readString(record, "promptVersion", path),
+    turnStatus: readEnum(record, "turnStatus", ["idle", "running", "failed", "interrupted"] as const, path),
+    reportStatus: readEnum(record, "reportStatus", ["pending", "running", "completed", "failed", "interrupted"] as const, path),
+    error: readString(record, "error", path), traces,
+    ...(record.mode === undefined ? {} : { mode: readEnum(record, "mode", ["native", "unconfirmed", "fallback"] as const, path) }),
+    ...(record.fallbackReason === undefined ? {} : { fallbackReason: readString(record, "fallbackReason", path) }),
+    ...(observations ? { observations } : {}),
   };
 }
 
@@ -488,6 +566,8 @@ function parseMockInterview(
       ),
       content: readString(message, "content", itemPath),
       createdAt: readString(message, "createdAt", itemPath),
+      ...(message.kind === undefined ? {} : { kind: readEnum(message, "kind", ["ask", "followup", "end"] as const, itemPath) }),
+      ...(message.competencyId === undefined ? {} : { competencyId: readString(message, "competencyId", itemPath) }),
     })),
     startedAt: readString(record, "startedAt", path),
     updatedAt: readString(record, "updatedAt", path),
@@ -497,6 +577,7 @@ function parseMockInterview(
     interviewId: readNullableString(record, "interviewId", path),
     questionIds: readStringArray(record, "questionIds", path),
     feedback,
+    ...(record.harness === undefined ? {} : { harness: parseMockHarness(readRecord(record.harness, `${path}.harness`), `${path}.harness`) }),
   };
 }
 
@@ -600,7 +681,7 @@ function validateRelationships(workspace: Workspace): void {
       if (!syncBlock.linkedQuestionIds.includes(question.id)) {
         fail(
           `questions[${index}].linkedSyncBlockId`,
-          `与同步块 "${syncBlock.id}" 的问答关系不一致。`,
+          `与聚合块 "${syncBlock.id}" 的问答关系不一致。`,
         );
       }
     }
@@ -612,7 +693,7 @@ function validateRelationships(workspace: Workspace): void {
     syncBlock.linkedQuestionIds.forEach((questionId) => {
       const question = questionsById.get(questionId);
       if (question?.linkedSyncBlockId !== syncBlock.id) {
-        fail(path, `与原子问答 "${questionId}" 的同步块关系不一致。`);
+        fail(path, `与原子问答 "${questionId}" 的聚合块关系不一致。`);
       }
     });
   });
@@ -665,7 +746,7 @@ function validateRelationships(workspace: Workspace): void {
         (candidate.suggestedSyncBlockId === null) !==
         (candidate.syncDecision === "not_suggested")
       ) {
-        fail(`${path}.syncDecision`, "与同步块建议状态不一致。");
+        fail(`${path}.syncDecision`, "与聚合块建议状态不一致。");
       }
       if (
         candidate.syncDecision === "accepted" &&
@@ -699,6 +780,27 @@ function validateRelationships(workspace: Workspace): void {
   });
 
   workspace.mockInterviews.forEach((session, index) => {
+    const checkEvidence = (refs: MockInterviewEvidence[] | undefined, path: string) => {
+      for (const ref of refs ?? []) {
+        const message = session.messages.find((item) => item.id === ref.messageId && item.role === "candidate");
+        if (!message || !Number.isInteger(ref.start) || !Number.isInteger(ref.end) || ref.start < 0 ||
+            ref.end <= ref.start || message.content.slice(ref.start, ref.end) !== ref.quote) {
+          fail(path, "引用无法对应候选人原文。");
+        }
+      }
+    };
+    for (const item of [...session.feedback?.strengths ?? [], ...session.feedback?.improvements ?? [], ...session.feedback?.questionReviews ?? []]) {
+      checkEvidence(item.evidenceRefs, `mockInterviews[${index}].feedback.evidenceRefs`);
+    }
+    for (const id of session.questionIds) checkEvidence(workspace.questions.find((q) => q.id === id)?.evidenceRefs, `mockInterviews[${index}].questionIds.evidenceRefs`);
+    for (const observation of session.harness?.observations ?? []) {
+      checkEvidence(observation.evidenceRefs, `mockInterviews[${index}].harness.observations`);
+      for (const ref of observation.evidenceRefs) {
+        const at = session.messages.findIndex((m) => m.id === ref.messageId);
+        const question = session.messages.slice(0, at).reverse().find((m) => m.role === "interviewer" && m.kind !== "end");
+        if (question?.competencyId !== observation.competencyId) fail(`mockInterviews[${index}].harness.observations`, "证据与被回答主题不一致。");
+      }
+    }
     assertUnique(
       session.messages.map((message) => message.id),
       `mockInterviews[${index}].messages`,

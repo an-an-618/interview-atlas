@@ -245,7 +245,7 @@ export function SyncBlockForm({
               onClick={() => setMode("create")}
             >
               <Plus size={15} aria-hidden="true" />
-              新建同步块
+              新建聚合块
             </button>
           </div>
         ) : null}
@@ -256,7 +256,7 @@ export function SyncBlockForm({
             id="existing-sync-block-panel"
             role="tabpanel"
           >
-            <legend>选择要关联的同步块</legend>
+            <legend>选择要关联的聚合块</legend>
             {syncBlocks.map((syncBlock, index) => {
               const checked = selectedSyncBlockId === syncBlock.id;
               return (
@@ -347,8 +347,8 @@ export function SyncBlockForm({
                               <strong>{question.title}</strong>
                               <small>
                                 {question.linkedSyncBlockId
-                                  ? "已连接其他同步块，保存后将移动"
-                                  : "尚未连接同步块"}
+                                  ? "已连接其他聚合块，保存后将移动"
+                                  : "尚未连接聚合块"}
                               </small>
                             </span>
                           </label>
@@ -360,7 +360,7 @@ export function SyncBlockForm({
                   </div>
                 </>
               ) : (
-                <p className="empty-inline">先创建原子问答，再建立同步块。</p>
+                <p className="empty-inline">先创建原子问答，再建立聚合块。</p>
               )}
             </fieldset>
             <fieldset className="question-picker resume-experience-picker">
@@ -412,7 +412,7 @@ export function SyncBlockForm({
           disabled={mode === "existing" && !selectedSyncBlockId}
         >
           <Link2 size={15} aria-hidden="true" />
-          {mode === "existing" ? "确认关联" : "保存同步块"}
+          {mode === "existing" ? "确认关联" : "保存聚合块"}
         </button>
       </footer>
     </form>

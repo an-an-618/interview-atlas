@@ -1,4 +1,5 @@
 mod recording;
+mod share;
 mod xfyun;
 
 use recording::RecordingState;
@@ -26,6 +27,7 @@ pub fn run() {
             recording::stop_dual_audio_recording,
             recording::reveal_latest_recording,
             transcribe_latest_recording,
+            share::save_share_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

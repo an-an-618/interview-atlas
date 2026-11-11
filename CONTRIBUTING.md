@@ -36,7 +36,7 @@ Use focused commits with messages such as:
 
 ```text
 feat: add atomic question review
-fix: preserve synchronized block links
+fix: preserve aggregate block links
 docs: clarify AI provider boundary
 ```
 

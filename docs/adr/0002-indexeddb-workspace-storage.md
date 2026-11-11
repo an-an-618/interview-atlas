@@ -6,7 +6,7 @@
 
 ## Context
 
-Interview records, atomic questions, synchronized blocks, review events, and resume experiences are sensitive user data. The first implementation must persist them locally, survive reloads, support transactional relationship changes, and remain usable without AI or a product backend.
+Interview records, atomic questions, aggregate blocks, review events, and resume experiences are sensitive user data. The first implementation must persist them locally, survive reloads, support transactional relationship changes, and remain usable without AI or a product backend.
 
 The storage boundary must also permit a future desktop database implementation without coupling UI components to browser APIs.
 
@@ -64,8 +64,8 @@ Rejected as the initial primary store because transactional relationships, index
 
 ## Validation
 
-- Reloading restores created interviews, questions, and synchronized blocks.
-- Creating a synchronized block and linking questions either completes atomically or leaves all records unchanged.
+- Reloading restores created interviews, questions, and aggregate blocks.
+- Creating an aggregate block and linking questions either completes atomically or leaves all records unchanged.
 - Export contains complete relationships and a format version.
 - Clearing the workspace removes every object store record.
 - Automated tests cover pure relationship and recommendation rules; browser-level tests cover IndexedDB persistence before release.

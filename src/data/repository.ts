@@ -341,7 +341,7 @@ export const indexedDbRepository: WorkspaceRepository = {
   getPreference,
   setPreference,
   export: (workspace) => ({
-    formatVersion: 10,
+    formatVersion: 11,
     exportedAt: new Date().toISOString(),
     ...workspace,
     questions: workspace.questions.map(normalizeQuestion),

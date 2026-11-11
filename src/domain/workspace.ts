@@ -1,3 +1,4 @@
+import { normalizeSearchText } from "./searchText";
 import type {
   AIReviewCandidate,
   AtomicQuestion,
@@ -496,7 +497,7 @@ export function resolveAIReviewSync(
   if (!review || !candidate) throw new Error("AI review candidate not found");
   if (candidate.syncDecision !== "pending") return workspace;
   if (!candidate.suggestedSyncBlockId) {
-    throw new Error("该候选没有同步块关联建议");
+    throw new Error("该候选没有聚合块关联建议");
   }
 
   let next = workspace;
@@ -505,14 +506,14 @@ export function resolveAIReviewSync(
       candidate.questionDecision !== "accepted" ||
       !candidate.createdQuestionId
     ) {
-      throw new Error("请先采纳原子问答，再采纳同步块关联建议");
+      throw new Error("请先采纳原子问答，再采纳聚合块关联建议");
     }
     if (
       !workspace.syncBlocks.some(
         (item) => item.id === candidate.suggestedSyncBlockId,
       )
     ) {
-      throw new Error("建议关联的同步块不存在");
+      throw new Error("建议关联的聚合块不存在");
     }
     next = linkQuestionToSyncBlock(
       workspace,
@@ -645,6 +646,7 @@ export function appendMockInterviewMessage(
   sessionId: string,
   role: MockInterviewMessageRole,
   content: string,
+  metadata: Pick<MockInterviewMessage, "kind" | "competencyId"> = {},
 ): { workspace: Workspace; session: MockInterviewSession } {
   const session = workspace.mockInterviews.find((item) => item.id === sessionId);
   if (!session) throw new Error("Mock interview not found");
@@ -658,6 +660,7 @@ export function appendMockInterviewMessage(
     role,
     content: content.trim().slice(0, 20_000),
     createdAt: now,
+    ...(role === "interviewer" ? metadata : {}),
   };
   const nextSession: MockInterviewSession = {
     ...session,
@@ -673,6 +676,15 @@ export function appendMockInterviewMessage(
     },
     session: nextSession,
   };
+}
+
+export function updateMockInterviewHarness(
+  workspace: Workspace, sessionId: string, harness: import("./types").MockInterviewHarness,
+): { workspace: Workspace; session: MockInterviewSession } {
+  const current = workspace.mockInterviews.find((item) => item.id === sessionId);
+  if (!current) throw new Error("Mock interview not found");
+  const session = { ...current, harness, updatedAt: timestamp() };
+  return { workspace: { ...workspace, mockInterviews: workspace.mockInterviews.map((item) => item.id === sessionId ? session : item) }, session };
 }
 
 function formatMockInterviewTranscript(session: MockInterviewSession): string {
@@ -787,6 +799,7 @@ export function applyMockInterviewAnalysis(
       ].slice(0, 4),
       sourceInterviewIds: [session.interviewId!],
       linkedSyncBlockId: null,
+      ...(input.evidenceRefs ? { evidenceRefs: input.evidenceRefs, sourceExcerpt: input.sourceExcerpt } : {}),
       createdAt: now,
       updatedAt: now,
     }));
@@ -843,6 +856,24 @@ export function addStandaloneQuestion(
       questions: [question, ...workspace.questions],
     },
     question,
+  };
+}
+
+export function setQuestionFavorite(
+  workspace: Workspace,
+  questionId: string,
+  favorite: boolean,
+): Workspace {
+  const question = workspace.questions.find((item) => item.id === questionId);
+  if (!question) throw new Error("Question not found");
+  if (Boolean(question.favorite) === favorite) return workspace;
+  return {
+    ...workspace,
+    questions: workspace.questions.map((item) =>
+      item.id === questionId
+        ? { ...item, favorite, updatedAt: timestamp() }
+        : item,
+    ),
   };
 }
 
@@ -915,6 +946,20 @@ export function addResumeExperience(
       resumeExperiences: [experience, ...workspace.resumeExperiences],
     },
     experience,
+  };
+}
+
+export function addResumeExperiences(
+  workspace: Workspace,
+  inputs: CreateResumeExperienceInput[],
+): { workspace: Workspace; experiences: ResumeExperience[] } {
+  if (!inputs.length || inputs.length > 40 || inputs.some((input) => !input.title.trim())) {
+    throw new Error("请选择 1 至 40 段有标题的经历后导入。");
+  }
+  const experiences = inputs.map((input) => addResumeExperience(workspace, input).experience);
+  return {
+    workspace: { ...workspace, resumeExperiences: [...experiences, ...workspace.resumeExperiences] },
+    experiences,
   };
 }
 
@@ -1022,9 +1067,9 @@ export function updateSyncBlock(
   input: UpdateSyncBlockInput,
 ): { workspace: Workspace; syncBlock: SyncBlock } {
   const existing = workspace.syncBlocks.find((item) => item.id === syncBlockId);
-  if (!existing) throw new Error("同步块不存在。");
+  if (!existing) throw new Error("聚合块不存在。");
   const title = input.title === undefined ? existing.title : input.title.trim();
-  if (!title) throw new Error("同步块标题不能为空。");
+  if (!title) throw new Error("聚合块标题不能为空。");
   const syncBlock: SyncBlock = {
     ...existing,
     title,
@@ -1060,15 +1105,16 @@ export function searchSyncBlocks(
   syncBlocks: SyncBlock[],
   query: string,
 ): SyncBlock[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
+  const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return syncBlocks;
+  const terms = [...new Set(normalizedQuery.split(" "))];
 
-  return syncBlocks.filter((syncBlock) =>
-    [syncBlock.title, syncBlock.body, syncBlock.reviewNotes]
-      .join(" ")
-      .toLocaleLowerCase("zh-CN")
-      .includes(normalizedQuery),
-  );
+  return syncBlocks.filter((syncBlock) => {
+    const text = normalizeSearchText(
+      [syncBlock.title, syncBlock.body, syncBlock.reviewNotes].join(" "),
+    );
+    return terms.every((term) => text.includes(term));
+  });
 }
 
 export function getFavoriteSyncBlocks(

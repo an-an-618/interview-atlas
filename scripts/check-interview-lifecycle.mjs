@@ -43,7 +43,7 @@ try {
     });
     const standalone = domain.addStandaloneQuestion(question.workspace, { title: "独立问题", answer: "无关答案", tags: [] });
     const block = domain.addSyncBlock(standalone.workspace, {
-      title: "保留同步块", body: "保留稳定回答", reviewNotes: "保留复习笔记",
+      title: "保留聚合块", body: "保留稳定回答", reviewNotes: "保留复习笔记",
       questionIds: [question.question.id, standalone.question.id], resumeExperienceIds: [],
     });
     const resume = domain.addResumeExperience(block.workspace, {

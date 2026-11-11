@@ -15,7 +15,7 @@ import {
 
 function createBackup(): WorkspaceExport {
   return {
-    formatVersion: 10,
+    formatVersion: 11,
     exportedAt: "2026-10-01T00:00:00.000Z",
     ...createDemoWorkspace(),
   };
@@ -26,12 +26,25 @@ function serialize(value: unknown): string {
 }
 
 describe("workspace backup import", () => {
-  it("parses a version 10 export and preserves relationships and favorites", () => {
+  it("preserves optional atomic-question favorites and accepts old backups without them", () => {
+    const backup = createBackup();
+    backup.questions[0].favorite = true;
+    backup.questions[1].favorite = false;
+    const restored = parseWorkspaceExport(serialize(backup)).workspace;
+    expect(restored.questions[0].favorite).toBe(true);
+    expect(restored.questions[1].favorite).toBe(false);
+    delete backup.questions[0].favorite;
+    expect(parseWorkspaceExport(serialize(backup)).workspace.questions[0].favorite).toBeUndefined();
+    (backup.questions[0] as unknown as Record<string, unknown>).favorite = "yes";
+    expect(() => parseWorkspaceExport(serialize(backup))).toThrow("questions[0].favorite");
+  });
+
+  it("parses a version 11 export and preserves relationships and favorites", () => {
     const backup = createBackup();
     const parsed = parseWorkspaceExport(serialize(backup));
 
     expect(parsed).toEqual({
-      formatVersion: 10,
+      formatVersion: 11,
       exportedAt: backup.exportedAt,
       workspace: createDemoWorkspace(),
     });
@@ -54,7 +67,7 @@ describe("workspace backup import", () => {
       ],
     });
     const backup: WorkspaceExport = {
-      formatVersion: 10,
+      formatVersion: 11,
       exportedAt: "2026-10-02T00:00:00.000Z",
       ...organized.workspace,
     };
@@ -128,7 +141,7 @@ describe("workspace backup import", () => {
       ],
     );
     const backup: WorkspaceExport = {
-      formatVersion: 10,
+      formatVersion: 11,
       exportedAt: "2026-10-01T00:00:00.000Z",
       ...analyzed.workspace,
     };
@@ -188,7 +201,7 @@ describe("workspace backup import", () => {
     legacy.formatVersion = 8;
     const syncBlocks = legacy.syncBlocks as Array<Record<string, unknown>>;
     const body =
-      "我先明确同步块要覆盖的稳定问题和适用边界。接着整理跨面试都成立的核心结论，并保留必要的事实与例子。正文还需要说明方案选择、关键约束和可以复用的判断依据。最后关联原子问答持续校正正文，避免单次回答覆盖稳定知识。";
+      "我先明确聚合块要覆盖的稳定问题和适用边界。接着整理跨面试都成立的核心结论，并保留必要的事实与例子。正文还需要说明方案选择、关键约束和可以复用的判断依据。最后关联原子问答持续校正正文，避免单次回答覆盖稳定知识。";
     syncBlocks[0]!.body = body;
 
     const parsed = parseWorkspaceExport(serialize(legacy));
@@ -238,7 +251,7 @@ describe("workspace backup import", () => {
     expect(() => parseWorkspaceExport("{")).toThrow(WorkspaceImportError);
     expect(() =>
       parseWorkspaceExport(
-        serialize({ ...createBackup(), formatVersion: 11 }),
+        serialize({ ...createBackup(), formatVersion: 12 }),
       ),
     ).toThrow("当前支持版本 1 至 10");
   });

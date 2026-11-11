@@ -1,5 +1,7 @@
 import {
   ArrowLeft,
+  ArrowUpRight,
+  Bookmark,
   BookOpen,
   CheckCircle2,
   ChevronDown,
@@ -11,6 +13,7 @@ import {
   FolderOpen,
   ListFilter,
   Home,
+  Layers,
   Link2,
   LockKeyhole,
   LoaderCircle,
@@ -25,7 +28,6 @@ import {
   Search,
   Settings,
   Sparkles,
-  Star,
   Trash2,
   Upload,
   X,
@@ -38,16 +40,19 @@ import type {
   AIProviderCredentialId,
 } from "./ai/types";
 import { AISettingsPanel, InterviewImportPage, extractionProgressLabel } from "./components/AI";
+import { AggregateBlocksPage } from "./components/AggregateBlocks";
+import { EmptyState, PageHeader } from "./components/PageLayout";
 import { AnswerEditor } from "./components/AnswerEditor";
 import { AnswerOutline } from "./components/AnswerOutline";
 import { InterviewForm, QuestionForm, SyncBlockForm } from "./components/Forms";
 import { GlobalSearchPage } from "./components/GlobalSearch";
-import { InlineAnswer } from "./components/InlineAnswer";
-import { InlineText } from "./components/InlineText";
 import { InterviewRecorder } from "./components/InterviewRecorder";
 import { Modal } from "./components/Modal";
 import { MockInterviewPage } from "./components/MockInterview";
 import { ResumePage } from "./components/Resume";
+import { ReviewCards } from "./components/ReviewCards";
+import { ShareButton, ShareModal } from "./components/Share";
+import { buildShareDocument, type ShareDocument, type ShareTarget } from "./domain/share";
 import { TranscriptionSettingsPanel } from "./components/TranscriptionSettings";
 import { WorkspaceMigration } from "./components/WorkspaceMigration";
 import type {
@@ -64,20 +69,18 @@ import type {
   ResumeExperience,
   SyncBlock,
   UpdateAIReviewCandidateInput,
-  UpdateSyncBlockInput,
   Workspace,
 } from "./domain/types";
 import {
   getFavoriteSyncBlocks,
-  getRandomQuestion,
   getInterviewQuestionIds,
   isAIReviewCandidatePending,
-  searchSyncBlocks,
-  sortSyncBlocksByLinkedQuestionCount,
 } from "./domain/workspace";
 import { useAISettings } from "./hooks/useAISettings";
 import { useTranscriptionSettings } from "./hooks/useTranscriptionSettings";
 import { useWorkspace } from "./hooks/useWorkspace";
+import { useReviewDeck, type ReviewDeckController } from "./hooks/useReviewDeck";
+import type { ReviewSource } from "./domain/reviewDeck";
 import { useExtractionQueue } from "./hooks/useExtractionQueue";
 import { extractionActive, extractionLabel, sortInterviews } from "./ai/extractionQueue";
 import type { TranscriptionServiceConfig } from "./recording/settings";
@@ -109,7 +112,7 @@ const navItems = [
   { id: "mock" as const, label: "模拟面试", icon: MessageSquareText },
   { id: "interviews" as const, label: "面试记录", icon: FileText },
   { id: "questions" as const, label: "原子问答", icon: CircleHelp },
-  { id: "sync" as const, label: "同步块", icon: Link2 },
+  { id: "sync" as const, label: "聚合块", icon: Link2 },
   { id: "resume" as const, label: "简历经历", icon: FileUser },
   { id: "settings" as const, label: "设置", icon: Settings },
 ];
@@ -159,51 +162,9 @@ function formatDate(value: string) {
   }).format(new Date(`${value}T00:00:00`));
 }
 
-function PageHeader({
-  eyebrow,
-  title,
-  description,
-  action,
-}: {
-  eyebrow: React.ReactNode;
-  title: React.ReactNode;
-  description?: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <header className="page-header">
-      <div>
-        <p className="eyebrow">{eyebrow}</p>
-        <h1>{title}</h1>
-        {description ? <p className="page-description">{description}</p> : null}
-      </div>
-      {action}
-    </header>
-  );
-}
-
 function StatusBadge({ status, task }: { status: InterviewStatus; task?: Interview["extractionTask"] }) {
   return (
     <span className={`status status-${status}`}>{task && task.status !== "completed" ? extractionLabel(task) : statusLabel[status]}</span>
-  );
-}
-
-function EmptyState({
-  title,
-  description,
-  action,
-}: {
-  title: string;
-  description: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="empty-state">
-      <BookOpen size={28} strokeWidth={1.4} aria-hidden="true" />
-      <h2>{title}</h2>
-      <p>{description}</p>
-      {action}
-    </div>
   );
 }
 
@@ -264,7 +225,9 @@ function CreatePage({
 }
 
 function OverviewPage({
-  dailyQuestion,
+  deck,
+  reviewCardsEnabled,
+  questions,
   interviews,
   aiReviews,
   syncBlocks,
@@ -276,8 +239,14 @@ function OverviewPage({
   onCreateInterview,
   onOpenMockInterviewRoom,
   onOpenAIReview,
+  onCreateSync,
+  onCreateQuestion,
+  onFavorite,
+  onSearch,
 }: {
-  dailyQuestion: AtomicQuestion | null;
+  deck: ReviewDeckController;
+  reviewCardsEnabled: boolean;
+  questions: AtomicQuestion[];
   interviews: Interview[];
   aiReviews: InterviewAIReview[];
   syncBlocks: SyncBlock[];
@@ -289,10 +258,29 @@ function OverviewPage({
   onCreateInterview: () => void;
   onOpenMockInterviewRoom: () => void;
   onOpenAIReview: (id: string) => void;
+  onCreateSync: () => void;
+  onCreateQuestion: () => void;
+  onFavorite: (source: ReviewSource, id: string, favorite: boolean) => void;
+  onSearch: (query: string) => void;
 }) {
-  const recent = [...interviews]
-    .sort(sortInterviews)
-    .slice(0, 5);
+  const [search, setSearch] = useState("");
+  const today = new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric", month: "long", day: "numeric", weekday: "long",
+  }).format(new Date());
+  const recent = [
+    ...interviews.map((item) => ({
+      id: `interview-${item.id}`, title: [item.company, item.role, item.round].filter(Boolean).join(" · "),
+      kind: "面试记录", icon: FileText, updatedAt: item.updatedAt, open: () => onOpenInterview(item.id),
+    })),
+    ...syncBlocks.filter((item) => !item.hidden).map((item) => ({
+      id: `sync-${item.id}`, title: item.title, kind: "聚合块", icon: Layers,
+      updatedAt: item.updatedAt, open: () => onOpenSync(item.id),
+    })),
+    ...questions.map((item) => ({
+      id: `question-${item.id}`, title: item.title, kind: "原子问答", icon: CircleHelp,
+      updatedAt: item.updatedAt, open: () => onOpenQuestion(item.id),
+    })),
+  ].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 5);
   const pendingReviews = interviews
     .flatMap((interview) => {
       const review = aiReviews.find((item) => item.interviewId === interview.id);
@@ -304,240 +292,125 @@ function OverviewPage({
         : [];
     })
     .sort((left, right) => sortInterviews(left.interview, right.interview));
-  const today = new Intl.DateTimeFormat("zh-CN", {
-    dateStyle: "full",
-  }).format(new Date());
-  const dailyQuestionSource = dailyQuestion?.sourceInterviewIds
-    .map((id) => interviews.find((interview) => interview.id === id))
-    .find((interview): interview is Interview => Boolean(interview));
-  const dailyQuestionSourceLabel = dailyQuestionSource
-    ? [
-        dailyQuestionSource.company,
-        dailyQuestionSource.role,
-        dailyQuestionSource.round,
-        dailyQuestionSource.date
-          ? formatDate(dailyQuestionSource.date)
-          : "",
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : "";
+  const favoriteQuestions = questions.filter((question) => question.favorite);
+  const favorites = [
+    ...favoriteSyncBlocks.map((item) => ({
+      id: `sync-${item.id}`, title: item.title, kind: "聚合块", open: () => onOpenSync(item.id),
+    })),
+    ...favoriteQuestions.map((item) => ({
+      id: `question-${item.id}`, title: item.title, kind: "原子问答", open: () => onOpenQuestion(item.id),
+    })),
+  ];
   return (
-    <div className="page overview-page">
-      <section
-        className="daily-question-hero"
-        aria-labelledby="daily-question-title"
-      >
-        <header className="daily-question-head">
-          <p className="eyebrow">
-            <span>{today}</span>
-            <span className="daily-question-label">每日一问</span>
-          </p>
-        </header>
-
-        <div className="daily-question-stage">
-          {dailyQuestion ? (
-            <button
-              className="daily-question-button"
-              type="button"
-              onClick={() => onOpenQuestion(dailyQuestion.id)}
-            >
-              <span className="daily-question-copy">
-                <span
-                  className="daily-question-title"
-                  id="daily-question-title"
-                  role="heading"
-                  aria-level={1}
-                >
-                  <span className="daily-question-quote" aria-hidden="true">
-                    “
-                  </span>
-                  <span className="daily-question-text">
-                    {dailyQuestion.title}
-                  </span>
-                  <span className="daily-question-quote" aria-hidden="true">
-                    ”
-                  </span>
-                </span>
-                {dailyQuestionSourceLabel ? (
-                  <span className="daily-question-source">
-                    <span aria-hidden="true">——</span>
-                    <span>{dailyQuestionSourceLabel}</span>
-                  </span>
-                ) : null}
-              </span>
-              <span className="daily-question-action">
-                查看回答
-                <ChevronRight size={18} aria-hidden="true" />
-              </span>
-            </button>
-          ) : (
-            <div className="daily-question-empty">
-              <h1 id="daily-question-title">还没有可复习的原子问答</h1>
-              <button
-                className="button accent"
-                onClick={() => onNavigate("questions")}
-              >
-                前往原子问答
-                <ChevronRight size={16} aria-hidden="true" />
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <div className="overview-content">
-        {!interviews.length && !syncBlocks.length ? (
-          <EmptyState
-            title="知识库还是空的"
-            description="原文会先保存在本机。之后可以手动拆成问答，不需要配置 AI。"
-            action={
-              <button className="button accent" onClick={onCreateInterview}>
-                <Plus size={16} aria-hidden="true" />
-                新建第一条记录
-              </button>
-            }
-          />
-        ) : (
-          <div className="overview-grid">
-            <section className="panel">
-              <div className="section-heading">
-                <div>
-                  <h2>同步块收藏夹</h2>
-                </div>
-                <span>{favoriteSyncBlocks.length} 项</span>
-              </div>
-              {favoriteSyncBlocks.length ? (
-                <div className="review-list favorite-sync-list">
-                  {favoriteSyncBlocks.map((syncBlock) => (
-                    <button
-                      className="review-row"
-                      key={syncBlock.id}
-                      onClick={() => onOpenSync(syncBlock.id)}
-                    >
-                      <span className="frequency">
-                        ×{syncBlock.linkedQuestionIds.length}
-                      </span>
-                      <span>
-                        <strong>{syncBlock.title}</strong>
-                        <small>
-                          关联 {syncBlock.linkedQuestionIds.length} 个原子问答
-                        </small>
-                      </span>
-                      <ArrowLeft
-                        className="arrow-forward"
-                        size={15}
-                        aria-hidden="true"
-                      />
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="panel-empty">
-                  <p>在同步块页面点亮星标，常用回答会集中显示在这里。</p>
-                  <button
-                    className="text-button"
-                    onClick={() => onNavigate("sync")}
-                  >
-                    去收藏同步块
-                  </button>
-                </div>
-              )}
-            </section>
-
-            <section className="panel">
-              <div className="section-heading">
-                <div>
-                  <h2>近期面试</h2>
-                </div>
-                <button
-                  className="text-button"
-                  onClick={() => onNavigate("interviews")}
-                >
-                  全部
+    <div className={`page overview-page${reviewCardsEnabled ? "" : " without-flashcards"}`}>
+      <header className="home-topbar">
+        <span className="home-workbench-label">个人工作台</span>
+        <time dateTime={new Date().toLocaleDateString("en-CA")}>{today}</time>
+        <form className="home-search" role="search" onSubmit={(event) => {
+          event.preventDefault(); onSearch(search.trim());
+        }}>
+          <button type="submit" aria-label="搜索知识库"><Search size={19} aria-hidden="true" /></button>
+          <input type="search" aria-label="搜索你的知识库" placeholder="搜索你的知识库" value={search}
+            onChange={(event) => setSearch(event.target.value)} />
+        </form>
+      </header>
+      <div className="home-layout">
+        <div className="home-main">
+          <section className="home-intro">
+            <h1>每一次表达，都<span>有迹可循。</span></h1>
+            <p>整理经历，练习回答，准备下一次相遇。</p>
+          </section>
+          {reviewCardsEnabled ? <ReviewCards
+            deck={deck}
+            syncBlocks={syncBlocks}
+            questions={questions}
+            onOpenSync={onOpenSync}
+            onOpenQuestion={onOpenQuestion}
+            onCreateSync={onCreateSync}
+            onCreateQuestion={onCreateQuestion}
+            onFavorite={onFavorite}
+            compact
+          /> : null}
+          <div className="overview-content">
+            <section className="home-recent" aria-labelledby="home-recent-title">
+              <header className="home-section-heading">
+                <h2 id="home-recent-title">最近整理</h2>
+                <button type="button" className="home-text-button" onClick={() => onSearch("")}>
+                  查看全部 <ArrowUpRight size={15} aria-hidden="true" />
                 </button>
-              </div>
-              <div className="recent-list">
-                {recent.map((interview) => (
-                  <button
-                    key={interview.id}
-                    onClick={() => onOpenInterview(interview.id)}
-                  >
-                    <span>
-                      <strong>
-                        {interview.company}
-                        {interview.round ? ` · ${interview.round}` : ""}
-                      </strong>
-                      <small>
-                        {formatDate(interview.date)} ·{" "}
-                        {interview.questionIds.length} 个问题
-                      </small>
-                    </span>
-                    <StatusBadge status={interview.status} task={interview.extractionTask} />
+              </header>
+              {recent.length ? <div className="home-recent-table" role="table" aria-label="最近整理的知识">
+                <div className="home-recent-head" role="row">
+                  <span role="columnheader">内容</span><span role="columnheader">类型</span><span role="columnheader">更新</span>
+                </div>
+                {recent.map((item) => {
+                  const Icon = item.icon;
+                  return <div className="home-recent-row" role="row" key={item.id}>
+                    <span role="cell"><button type="button" onClick={item.open}><Icon size={18} aria-hidden="true" /><span>{item.title}</span></button></span>
+                    <span role="cell">{item.kind}</span>
+                    <time role="cell" dateTime={item.updatedAt} title={formatDate(item.updatedAt.slice(0, 10))}>
+                      {new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric" }).format(new Date(item.updatedAt))}
+                    </time>
+                  </div>;
+                })}
+              </div> : <div className="home-empty">
+                <FileText size={22} strokeWidth={1.3} aria-hidden="true" />
+                <p>从记录一次经历开始，让每个回答都有来处。</p>
+                <button type="button" className="home-text-button" onClick={onCreateInterview}>新建第一条记录 <Plus size={15} aria-hidden="true" /></button>
+              </div>}
+            </section>
+            {pendingReviews.length ? <section className="home-pending" aria-labelledby="home-pending-title">
+              <header className="home-section-heading">
+                <h2 id="home-pending-title">待审核</h2><span>{pendingReviews.length} 场</span>
+              </header>
+              <div className="pending-review-preview">
+                {pendingReviews.slice(0, 5).map(({ interview, pendingCount }) => (
+                  <button type="button" key={interview.id} onClick={() => onOpenAIReview(interview.id)}>
+                    <span><strong>{interview.company}</strong><small>{[interview.role, interview.round].filter(Boolean).join(" · ")}</small></span>
+                    <em>{interview.extractionTask && interview.extractionTask.status !== "completed" ? extractionLabel(interview.extractionTask) : `${pendingCount} 条`}</em>
+                    <ChevronRight size={14} aria-hidden="true" />
                   </button>
                 ))}
               </div>
-            </section>
-
-            <section className="panel pending-review-panel">
-              <div className="section-heading">
-                <div>
-                  <h2>待审核</h2>
-                </div>
-                <span>{pendingReviews.length} 场</span>
-              </div>
-              {pendingReviews.length ? (
-                <div className="pending-review-preview">
-                  {pendingReviews
-                    .slice(0, 5)
-                    .map(({ interview, pendingCount }) => (
-                      <button
-                        type="button"
-                        key={interview.id}
-                        onClick={() => onOpenAIReview(interview.id)}
-                      >
-                        <span>
-                          <strong>{interview.company}</strong>
-                          <small>
-                            {[interview.role, interview.round]
-                              .filter(Boolean)
-                              .join(" · ") || formatDate(interview.date)}
-                          </small>
-                        </span>
-                        <em>{interview.extractionTask && interview.extractionTask.status !== "completed" ? extractionLabel(interview.extractionTask) : `${pendingCount} 条`}</em>
-                        <ChevronRight size={14} aria-hidden="true" />
-                      </button>
-                    ))}
-                </div>
-              ) : (
-                <div className="pending-review-empty">
-                  <CheckCircle2 size={22} aria-hidden="true" />
-                  <strong>暂无待审核内容</strong>
-                  <small>AI 拆解后的候选会出现在这里。</small>
-                </div>
-              )}
-            </section>
+            </section> : null}
           </div>
-        )}
+        </div>
+        <aside className="home-aside" aria-label="面试练习与收藏">
+          <section className="home-interview" aria-labelledby="home-interview-title">
+            <p className="home-interview-kicker">AI MOCK INTERVIEW</p>
+            <h2 id="home-interview-title">让下一次面试，<br />从容一点。</h2>
+            <p className="home-interview-description">结合你的经历与知识库，进行一场模拟面试。</p>
+            <div className="home-interview-scene" aria-hidden="true">
+              <div className="home-paper home-paper-back"><span>面试提纲</span><i /><i /><i /><i /><i /></div>
+              <div className="home-paper home-paper-front"><span>面试对话记录</span><p>面试官：………………</p><p>你：……………………</p><i /><i /></div>
+              <span className="home-interview-seal">面<br />试</span>
+            </div>
+            <div className="home-interview-actions">
+              <button className="overview-mock-room-entry" type="button" onClick={onOpenMockInterviewRoom}>
+                进入面试间 <ArrowUpRight size={17} aria-hidden="true" />
+              </button>
+              <button type="button" className="home-interview-history" onClick={() => onNavigate("mock")}>历史模拟</button>
+            </div>
+          </section>
+          <section className="home-favorites" aria-labelledby="home-favorites-title">
+            <header className="home-section-heading">
+              <h2 id="home-favorites-title">我的收藏</h2>
+              {favorites.length ? <span>{favorites.length} 项</span> : null}
+            </header>
+            {favorites.length ? <div className="home-favorite-list">
+              {favorites.map((item) => <button type="button" key={item.id} onClick={item.open} title={item.title}>
+                <Bookmark size={20} strokeWidth={1.5} aria-hidden="true" />
+                <span><strong>{item.title}</strong><small>{item.kind}</small></span>
+                <ArrowUpRight size={15} aria-hidden="true" />
+              </button>)}
+            </div> : <div className="home-empty home-favorite-empty">
+              <Bookmark size={22} strokeWidth={1.3} aria-hidden="true" />
+              <p>点亮卡片上的星标，把值得回看的回答留在这里。</p>
+              <button type="button" className="home-text-button" onClick={() => onNavigate("sync")}>浏览聚合块 <ArrowUpRight size={14} aria-hidden="true" /></button>
+            </div>}
+          </section>
+        </aside>
       </div>
-
-      <button
-        className="overview-mock-room-entry"
-        type="button"
-        onClick={onOpenMockInterviewRoom}
-      >
-        <span className="overview-mock-room-icon">
-          <MessageSquareText size={25} aria-hidden="true" />
-        </span>
-        <span className="overview-mock-room-copy">
-          <small>AI Mock Interview</small>
-          <strong>进入模拟面试间</strong>
-        </span>
-        <span className="overview-mock-room-action">
-          开始模拟
-          <ChevronRight size={18} aria-hidden="true" />
-        </span>
-      </button>
     </div>
   );
 }
@@ -1069,7 +942,7 @@ function InterviewsPage({
               </div>
               <div>
                 <h3>仍然保留</h3>
-                <p>关联的同步块、简历经历，以及它们的其他内容与关联。</p>
+                <p>关联的聚合块、简历经历，以及它们的其他内容与关联。</p>
               </div>
             </div>
             <p className="interview-delete-note">若其中的问答被其他面试共用，该问答也会一并删除。</p>
@@ -1587,8 +1460,8 @@ function AISyncReviewCard({
         </div>
         <Link2 size={18} aria-hidden="true" />
         <div>
-          <span>目标同步块</span>
-          <strong>{syncBlock?.title ?? "同步块已不存在"}</strong>
+          <span>目标聚合块</span>
+          <strong>{syncBlock?.title ?? "聚合块已不存在"}</strong>
         </div>
       </div>
       {candidate.matchReason ? <p>{candidate.matchReason}</p> : null}
@@ -1782,7 +1655,7 @@ function AIReviewPage({
               className={reviewComplete ? "complete" : questionsComplete ? "active" : "locked"}
             >
               <span>{reviewComplete ? <CheckCircle2 size={15} /> : "2"}</span>
-              <strong>审核同步块</strong>
+              <strong>审核聚合块</strong>
               <small>{syncCandidates.length - pendingSync.length}/{syncCandidates.length}</small>
             </a>
           </nav>
@@ -1825,8 +1698,8 @@ function AIReviewPage({
             <header>
               <span className="ai-review-stage-number">02</span>
               <div>
-                <p className="eyebrow">Sync blocks</p>
-                <h2>审核同步块关联</h2>
+                <p className="eyebrow">Aggregate blocks</p>
+                <h2>审核聚合块关联</h2>
                 <p>只处理已采纳问答的关联建议。忽略关联不会影响上一步保存的问答。</p>
               </div>
               <strong>
@@ -1841,7 +1714,7 @@ function AIReviewPage({
               <div className="ai-sync-review-locked">
                 <LockKeyhole size={22} aria-hidden="true" />
                 <strong>先完成原子问答审核</strong>
-                <p>所有问答均采纳或忽略后，这里的同步块关联建议才会开放。</p>
+                <p>所有问答均采纳或忽略后，这里的聚合块关联建议才会开放。</p>
               </div>
             ) : syncCandidates.length ? (
               <div className="ai-sync-review-list">
@@ -1860,7 +1733,7 @@ function AIReviewPage({
             ) : (
               <div className="ai-review-page-state complete">
                 <CheckCircle2 size={21} aria-hidden="true" />
-                <strong>没有需要审核的同步块关联</strong>
+                <strong>没有需要审核的聚合块关联</strong>
                 <p>已采纳的原子问答会独立保存在问答库中。</p>
               </div>
             )}
@@ -1871,7 +1744,7 @@ function AIReviewPage({
               <CheckCircle2 size={20} aria-hidden="true" />
               <div>
                 <strong>本次 AI 解析审核已完成</strong>
-                <p>原子问答和同步块关联均已按你的决策保存。</p>
+                <p>原子问答和聚合块关联均已按你的决策保存。</p>
               </div>
               <button className="button secondary" type="button" onClick={onOpenInterview}>
                 返回面试详情
@@ -1908,6 +1781,7 @@ function InterviewDetail({
   onOpenMockInterview,
   onUpdateInterview,
   onUpdateQuestion,
+  onShare,
 }: {
   interview: Interview;
   questions: AtomicQuestion[];
@@ -1923,6 +1797,7 @@ function InterviewDetail({
   onOpenMockInterview: (id: string) => void;
   onUpdateInterview: (id: string, input: CreateInterviewInput) => void;
   onUpdateQuestion: (id: string, input: CreateQuestionInput) => void;
+  onShare: (target: ShareTarget) => void;
 }) {
   const [editingInfo, setEditingInfo] = useState(false);
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
@@ -2071,7 +1946,7 @@ function InterviewDetail({
                 <span>{String(index + 1).padStart(2, "0")}</span>
                 <strong>{question.title}</strong>
                 {question.linkedSyncBlockId ? (
-                  <Link2 size={13} aria-label="已关联同步块" />
+                  <Link2 size={13} aria-label="已关联聚合块" />
                 ) : null}
               </button>
             ))}
@@ -2115,6 +1990,9 @@ function InterviewDetail({
         </div>
 
         <header className="interview-detail-hero">
+          <div className="interview-hero-share">
+            <ShareButton onClick={() => onShare({ kind: "interview", id: interview.id })} />
+          </div>
           <div className="interview-detail-kicker">
             <p className="eyebrow">面试 · {formatDate(interview.date)}</p>
             {interview.simulated ? (
@@ -2228,6 +2106,7 @@ function InterviewDetail({
                     <header>
                       <span>Q{String(index + 1).padStart(2, "0")}</span>
                       <h3>{question.title}</h3>
+                      <ShareButton onClick={() => onShare({ kind: "question", id: question.id })} />
                       <button className="text-button question-edit-trigger" onClick={() => setEditingQuestionId(question.id)} aria-label={`编辑原子问答：${question.title}`}>
                         <Pencil size={14} aria-hidden="true" />
                         编辑
@@ -2247,7 +2126,7 @@ function InterviewDetail({
                       >
                         <Link2 size={14} aria-hidden="true" />
                         <span>
-                          <small>同步块 · 已关联稳定回答</small>
+                          <small>聚合块 · 已关联稳定回答</small>
                           <strong>{syncBlock.title}</strong>
                         </span>
                         <ChevronRight size={15} aria-hidden="true" />
@@ -2273,7 +2152,7 @@ function InterviewDetail({
                         onClick={() => onCreateSync(question.id)}
                       >
                         <Link2 size={14} aria-hidden="true" />
-                        关联到同步块
+                        关联到聚合块
                       </button>
                     ) : null}
                   </article>
@@ -2308,7 +2187,7 @@ function InterviewDetail({
         <div className="interview-ai-desktop-entry">
           <p className="eyebrow">AI 解析审核</p>
           <h2>{aiReviewStatus}</h2>
-          <p>在独立页面中依次审核原子问答和同步块关联。</p>
+          <p>在独立页面中依次审核原子问答和聚合块关联。</p>
           <button className="button primary" type="button" onClick={onOpenAIReview}>
             <Sparkles size={14} aria-hidden="true" />
             进入审核页
@@ -2330,7 +2209,7 @@ function InterviewDetail({
               </dd>
             </div>
             <div>
-              <dt>已关联同步块</dt>
+              <dt>已关联聚合块</dt>
               <dd>
                 {linkedQuestionCount}/{interviewQuestions.length}
               </dd>
@@ -2340,7 +2219,7 @@ function InterviewDetail({
 
         <section>
           <p className="eyebrow">Relations</p>
-          <h2>同步块关系</h2>
+          <h2>聚合块关系</h2>
           {linkedSyncBlocks.length ? (
             <div className="interview-related-syncs">
               {linkedSyncBlocks.map((syncBlock) => (
@@ -2361,7 +2240,7 @@ function InterviewDetail({
               ))}
             </div>
           ) : (
-            <p className="interview-aside-empty">当前面试还没有关联同步块。</p>
+            <p className="interview-aside-empty">当前面试还没有关联聚合块。</p>
           )}
         </section>
 
@@ -2489,7 +2368,7 @@ function QuestionsPage({
             都是<em>一个可以复用的原子</em>
           </>
         }
-        description="实例回答保留当时的上下文，稳定回答通过同步块复用。"
+        description="实例回答保留当时的上下文，相似问答通过聚合块汇集，沉淀可复用的回答。"
         action={
           <button className="button primary" onClick={onCreateQuestion}>
             <Plus size={15} aria-hidden="true" />
@@ -2598,7 +2477,7 @@ function QuestionsPage({
                       <span>{syncBlock.title}</span>
                     </>
                   ) : (
-                    <span>未关联同步块</span>
+                    <span>未关联聚合块</span>
                   )}
                 </span>
                 <ChevronRight
@@ -2647,6 +2526,7 @@ function QuestionDetail({
   onOpenSync,
   onOpenResume,
   onUpdate,
+  onShare,
 }: {
   question: AtomicQuestion;
   interviews: Interview[];
@@ -2657,6 +2537,7 @@ function QuestionDetail({
   onOpenInterview: (id: string) => void;
   onOpenSync: (id: string) => void;
   onOpenResume: (id: string) => void;
+  onShare: (target: ShareTarget) => void;
   onUpdate: (
     questionId: string,
     input: {
@@ -2739,13 +2620,16 @@ function QuestionDetail({
               </button>
             </div>
           ) : (
-            <button
-              className="button secondary"
-              onClick={() => setIsEditing(true)}
-            >
-              <Pencil size={14} aria-hidden="true" />
-              编辑
-            </button>
+            <div className="question-edit-actions">
+              <ShareButton onClick={() => onShare({ kind: "question", id: question.id })} />
+              <button
+                className="button secondary"
+                onClick={() => setIsEditing(true)}
+              >
+                <Pencil size={14} aria-hidden="true" />
+                编辑
+              </button>
+            </div>
           )
         }
       />
@@ -2803,8 +2687,8 @@ function QuestionDetail({
         <section>
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Synchronized knowledge</p>
-              <h2>关联同步块</h2>
+              <p className="eyebrow">Aggregated knowledge</p>
+              <h2>关联聚合块</h2>
             </div>
           </div>
           {syncBlock ? (
@@ -2815,12 +2699,12 @@ function QuestionDetail({
               <Link2 size={15} aria-hidden="true" />
               <span>
                 <strong>{syncBlock.title}</strong>
-                <small>查看同步块正文与复习笔记</small>
+                <small>查看聚合块正文与复习笔记</small>
               </span>
               <ChevronRight size={15} aria-hidden="true" />
             </button>
           ) : (
-            <p className="relation-empty">尚未关联同步块。</p>
+            <p className="relation-empty">尚未关联聚合块。</p>
           )}
         </section>
 
@@ -2886,297 +2770,10 @@ function QuestionDetail({
   );
 }
 
-function SyncPage({
-  syncBlocks,
-  questions,
-  resumeExperiences,
-  selectedId,
-  onSelect,
-  onCreate,
-  onOpenQuestion,
-  onOpenResume,
-  onUpdate,
-}: {
-  syncBlocks: SyncBlock[];
-  questions: AtomicQuestion[];
-  resumeExperiences: ResumeExperience[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  onCreate: () => void;
-  onOpenQuestion: (id: string) => void;
-  onOpenResume: (id: string) => void;
-  onUpdate: (id: string, input: UpdateSyncBlockInput) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
-  const sortedSyncBlocks = useMemo(
-    () => sortSyncBlocksByLinkedQuestionCount(syncBlocks),
-    [syncBlocks],
-  );
-  const favoriteSyncBlocks = useMemo(
-    () => getFavoriteSyncBlocks({ syncBlocks }),
-    [syncBlocks],
-  );
-  const scopedSyncBlocks = showFavoritesOnly
-    ? favoriteSyncBlocks
-    : sortedSyncBlocks;
-  const visibleSyncBlocks = useMemo(
-    () => searchSyncBlocks(scopedSyncBlocks, query),
-    [query, scopedSyncBlocks],
-  );
-  const selected =
-    visibleSyncBlocks.find((item) => item.id === selectedId) ??
-    visibleSyncBlocks[0];
-  const linkedExperiences = selected
-    ? resumeExperiences.filter(
-        (experience) =>
-          experience.linkedSyncBlockIds.includes(selected.id) ||
-          experience.linkedQuestionIds.some((id) =>
-            selected.linkedQuestionIds.includes(id),
-          ),
-      )
-    : [];
-
-  return (
-    <div className="page sync-page">
-      <PageHeader
-        eyebrow="Synchronized knowledge"
-        title="同步块"
-        description="牵一发而动全身，盘活你的知识资产"
-        action={
-          <button className="button primary" onClick={onCreate}>
-            <Plus size={16} aria-hidden="true" />
-            新建同步块
-          </button>
-        }
-      />
-      {syncBlocks.length ? (
-        <div className="toolbar sync-search-toolbar">
-          <label className="search-field">
-            <Search size={16} aria-hidden="true" />
-            <input
-              aria-label="搜索同步块"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={
-                showFavoritesOnly
-                  ? "搜索收藏同步块"
-                  : "搜索标题、稳定回答或复习笔记"
-              }
-            />
-          </label>
-          <div className="segmented sync-scope-filter" aria-label="同步块范围">
-            <button
-              className={showFavoritesOnly ? "" : "active"}
-              type="button"
-              aria-pressed={!showFavoritesOnly}
-              onClick={() => setShowFavoritesOnly(false)}
-            >
-              全部
-            </button>
-            <button
-              className={showFavoritesOnly ? "active" : ""}
-              type="button"
-              aria-pressed={showFavoritesOnly}
-              onClick={() => setShowFavoritesOnly(true)}
-            >
-              <Star
-                size={14}
-                fill={showFavoritesOnly ? "currentColor" : "none"}
-                aria-hidden="true"
-              />
-              收藏
-            </button>
-          </div>
-          <span className="sync-search-summary" aria-live="polite">
-            显示 {visibleSyncBlocks.length} / {scopedSyncBlocks.length} 个
-          </span>
-        </div>
-      ) : null}
-      {visibleSyncBlocks.length && selected ? (
-        <div className="sync-layout">
-          <nav className="sync-list" aria-label="同步块列表">
-            {visibleSyncBlocks.map((syncBlock) => (
-              <div
-                className={`sync-list-item${
-                  syncBlock.id === selected.id ? " active" : ""
-                }`}
-                key={syncBlock.id}
-              >
-                <button
-                  className="sync-list-select"
-                  type="button"
-                  onClick={() => onSelect(syncBlock.id)}
-                >
-                  <strong>{syncBlock.title}</strong>
-                  <small>{syncBlock.linkedQuestionIds.length} 个关联问答</small>
-                </button>
-                <button
-                  className={`sync-favorite-button${
-                    syncBlock.favorite ? " active" : ""
-                  }`}
-                  type="button"
-                  aria-label={
-                    syncBlock.favorite
-                      ? `取消收藏「${syncBlock.title}」`
-                      : `收藏「${syncBlock.title}」`
-                  }
-                  aria-pressed={syncBlock.favorite}
-                  title={syncBlock.favorite ? "取消收藏" : "收藏"}
-                  onClick={() =>
-                    onUpdate(syncBlock.id, {
-                      favorite: !syncBlock.favorite,
-                    })
-                  }
-                >
-                  <Star
-                    size={17}
-                    fill={syncBlock.favorite ? "currentColor" : "none"}
-                    aria-hidden="true"
-                  />
-                </button>
-              </div>
-            ))}
-          </nav>
-          <article className="sync-detail" key={selected.id}>
-            <header className="sync-detail-header">
-              <div>
-                <p className="eyebrow">Stable answer</p>
-                <h2>
-                  <InlineText
-                    value={selected.title}
-                    label="同步块标题"
-                    placeholder="填写同步块标题"
-                    required
-                    onSave={(title) => onUpdate(selected.id, { title })}
-                  />
-                </h2>
-              </div>
-              <button
-                className={`sync-detail-favorite${
-                  selected.favorite ? " active" : ""
-                }`}
-                type="button"
-                aria-label={selected.favorite ? "取消收藏同步块" : "收藏同步块"}
-                aria-pressed={selected.favorite}
-                title={selected.favorite ? "取消收藏" : "收藏"}
-                onClick={() =>
-                  onUpdate(selected.id, { favorite: !selected.favorite })
-                }
-              >
-                <Star
-                  size={22}
-                  fill={selected.favorite ? "currentColor" : "none"}
-                  aria-hidden="true"
-                />
-              </button>
-            </header>
-            <div className="sync-body">
-              <InlineAnswer
-                value={selected.body}
-                label="稳定回答"
-                placeholder="点击填写稳定回答"
-                onSave={(body) => onUpdate(selected.id, { body })}
-              />
-            </div>
-            <aside className="review-note">
-              <strong>复习笔记</strong>
-              <p>
-                <InlineText
-                  value={selected.reviewNotes}
-                  label="复习笔记"
-                  placeholder="点击填写复习笔记"
-                  multiline
-                  onSave={(reviewNotes) => onUpdate(selected.id, { reviewNotes })}
-                />
-              </p>
-            </aside>
-            <div className="linked-section">
-              <h3>关联原子问答 · {selected.linkedQuestionIds.length}</h3>
-              {selected.linkedQuestionIds.map((id) => {
-                const question = questions.find((item) => item.id === id);
-                return question ? (
-                  <button
-                    className="linked-question-row"
-                    key={id}
-                    onClick={() => onOpenQuestion(question.id)}
-                  >
-                    <CircleHelp size={14} aria-hidden="true" />
-                    <span>{question.title}</span>
-                    <ChevronRight size={14} aria-hidden="true" />
-                  </button>
-                ) : null;
-              })}
-            </div>
-            <div className="linked-section">
-              <h3>关联简历经历 · {linkedExperiences.length}</h3>
-              {linkedExperiences.length ? (
-                linkedExperiences.map((experience) => (
-                  <button
-                    className="linked-question-row"
-                    key={experience.id}
-                    onClick={() => onOpenResume(experience.id)}
-                  >
-                    <FileUser size={14} aria-hidden="true" />
-                    <span>{experience.title}</span>
-                    <ChevronRight size={14} aria-hidden="true" />
-                  </button>
-                ))
-              ) : (
-                <p className="relation-empty">尚未关联简历经历。</p>
-              )}
-            </div>
-          </article>
-        </div>
-      ) : syncBlocks.length ? (
-        <EmptyState
-          title={
-            showFavoritesOnly && !favoriteSyncBlocks.length
-              ? "还没有收藏的同步块"
-              : showFavoritesOnly
-                ? "没有匹配的收藏同步块"
-                : "没有匹配的同步块"
-          }
-          description={
-            showFavoritesOnly && !favoriteSyncBlocks.length
-              ? "点亮同步块右侧的星标，即可在这里集中查看。"
-              : "调整关键词，或清除搜索查看当前范围内的同步块。"
-          }
-          action={
-            <button
-              className="button secondary"
-              type="button"
-              onClick={() => {
-                if (showFavoritesOnly && !favoriteSyncBlocks.length) {
-                  setShowFavoritesOnly(false);
-                } else {
-                  setQuery("");
-                }
-              }}
-            >
-              {showFavoritesOnly && !favoriteSyncBlocks.length
-                ? "查看全部同步块"
-                : "清除搜索"}
-            </button>
-          }
-        />
-      ) : (
-        <EmptyState
-          title="还没有同步块"
-          description="当一个问题值得跨面试复用时，为它维护一份稳定回答。"
-          action={
-            <button className="button primary" onClick={onCreate}>
-              创建第一个同步块
-            </button>
-          }
-        />
-      )}
-    </div>
-  );
-}
-
 function SettingsPage({
   hasData,
+  reviewCardsEnabled,
+  onSetReviewCardsEnabled,
   aiConfig,
   aiLoading,
   aiError,
@@ -3197,6 +2794,8 @@ function SettingsPage({
   onClear,
 }: {
   hasData: boolean;
+  reviewCardsEnabled: boolean;
+  onSetReviewCardsEnabled: (enabled: boolean) => void;
   aiConfig: AIProviderConfig;
   aiLoading: boolean;
   aiError: string | null;
@@ -3245,6 +2844,23 @@ function SettingsPage({
         <CheckCircle2 className="success-icon" size={20} aria-label="可用" />
       </section>
 
+      <section className="settings-section homepage-settings-section">
+        <div>
+          <Layers size={20} aria-hidden="true" />
+          <span>
+            <strong id="homepage-flashcards-label">首页闪卡</strong>
+            <small id="homepage-flashcards-description">在主页显示闪卡，方便随手复习。关闭后直接查看收藏与近况。</small>
+          </span>
+        </div>
+        <button className="settings-switch" type="button" role="switch"
+          aria-checked={reviewCardsEnabled}
+          aria-labelledby="homepage-flashcards-label"
+          aria-describedby="homepage-flashcards-description"
+          onClick={() => onSetReviewCardsEnabled(!reviewCardsEnabled)}>
+          <span className="settings-switch-track" aria-hidden="true"><span /></span>
+        </button>
+      </section>
+
       <div className="settings-groups">
         <section className={`settings-group${aiExpanded ? " expanded" : ""}`}>
           <button
@@ -3264,7 +2880,7 @@ function SettingsPage({
             <ChevronDown size={19} aria-hidden="true" />
           </button>
           <div
-            className="settings-group-content"
+            className="settings-group-content ai-services-content"
             id="settings-ai-panel"
             hidden={!aiExpanded}
           >
@@ -3412,7 +3028,7 @@ function ClearWorkspaceDialog({
           <p>
             将删除 {workspace.interviews.length} 条面试记录、
             {workspace.questions.length} 个原子问答、
-            {workspace.syncBlocks.length} 个同步块和
+            {workspace.syncBlocks.length} 个聚合块和
             {workspace.resumeExperiences.length} 条简历经历，以及相关审核与复习数据。
           </p>
         </div>
@@ -3458,6 +3074,7 @@ function ClearWorkspaceDialog({
 }
 
 export default function App() {
+  const [shareDocument, setShareDocument] = useState<ShareDocument | null>(null);
   const {
     workspace,
     loading,
@@ -3466,6 +3083,7 @@ export default function App() {
     createInterview,
     createMockInterview,
     appendMockInterviewMessage,
+    updateMockInterviewHarness,
     endMockInterview,
     applyMockInterviewAnalysis,
     updateInterview,
@@ -3483,10 +3101,12 @@ export default function App() {
     acceptAllAIReviewCandidates,
     createStandaloneQuestion,
     updateQuestion,
+    setQuestionFavorite,
     linkQuestionToSyncBlock,
     createSyncBlock,
     updateSyncBlock,
     createResumeExperience,
+    importResumeExperiences,
     updateResumeExperience,
     deleteResumeExperience,
     loadDemo,
@@ -3494,6 +3114,14 @@ export default function App() {
     restoreWorkspace,
     exportWorkspace,
   } = useWorkspace();
+  const reviewDeck = useReviewDeck(workspace.syncBlocks, workspace.questions, loading);
+  const [reviewCardsEnabled, setReviewCardsEnabled] = useState(() => {
+    try {
+      return window.localStorage.getItem("interview-atlas-home-flashcards") !== "false";
+    } catch {
+      return true;
+    }
+  });
   const aiSettings = useAISettings();
   const transcriptionSettings = useTranscriptionSettings();
   const aiClient = useMemo(() => createOpenAICompatibleClient(), []);
@@ -3516,6 +3144,11 @@ export default function App() {
     string | null
   >(null);
   const [mockLobbyView, setMockLobbyView] = useState<"home" | "setup">("home");
+  useLayoutEffect(() => {
+    if (view === "mock" && !selectedMockInterviewId) {
+      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    }
+  }, [view, mockLobbyView, selectedMockInterviewId]);
   const [questionReturnView, setQuestionReturnView] =
     useState<View>("questions");
   const [createMode, setCreateMode] = useState<CreateMode>("choose");
@@ -3531,7 +3164,6 @@ export default function App() {
   const [mobileKnowledgeMenuOpen, setMobileKnowledgeMenuOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
-  const [dailyQuestionId, setDailyQuestionId] = useState<string | null>(null);
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
 
   useEffect(() => () => {
@@ -3539,19 +3171,6 @@ export default function App() {
       window.clearTimeout(toastTimerRef.current);
     }
   }, []);
-
-  useLayoutEffect(() => {
-    if (
-      loading ||
-      (dailyQuestionId &&
-        workspace.questions.some((question) => question.id === dailyQuestionId))
-    ) {
-      return;
-    }
-
-    const question = getRandomQuestion(workspace.questions);
-    setDailyQuestionId(question?.id ?? null);
-  }, [dailyQuestionId, loading, workspace.questions]);
 
   useEffect(() => {
     if (!mobileKnowledgeMenuOpen) return;
@@ -3573,8 +3192,6 @@ export default function App() {
   const selectedQuestion = workspace.questions.find(
     (item) => item.id === selectedQuestionId,
   );
-  const dailyQuestion =
-    workspace.questions.find((item) => item.id === dailyQuestionId) ?? null;
   const hasData =
     workspace.interviews.length +
       workspace.interviewOrganizations.length +
@@ -3659,6 +3276,14 @@ export default function App() {
     setView("interviews");
     setSelectedInterviewId(id);
     setSelectedQuestionId(null);
+  };
+
+  const openShare = (target: ShareTarget) => {
+    try {
+      setShareDocument(buildShareDocument(target, workspace));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "无法打开分享，请重新选择内容。");
+    }
   };
 
   const openAIReview = (id: string) => {
@@ -3763,7 +3388,7 @@ export default function App() {
 
   return (
     <div
-      className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
+      className={`app-shell${view === "overview" ? " home-shell" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${
         view === "create" && createMode !== "choose"
           ? " create-detail-open"
           : ""
@@ -3831,7 +3456,7 @@ export default function App() {
                     ) : item.id === "questions" ? (
                       <small>{workspace.questions.length}</small>
                     ) : item.id === "sync" ? (
-                      <small>{workspace.syncBlocks.length}</small>
+                      <small>{workspace.syncBlocks.filter((block) => !block.hidden).length}</small>
                     ) : item.id === "resume" ? (
                       <small>{workspace.resumeExperiences.length}</small>
                     ) : null}
@@ -3899,7 +3524,9 @@ export default function App() {
 
         {view === "overview" ? (
           <OverviewPage
-            dailyQuestion={dailyQuestion}
+            deck={reviewDeck}
+            reviewCardsEnabled={reviewCardsEnabled}
+            questions={workspace.questions}
             interviews={workspace.interviews}
             aiReviews={workspace.aiReviews}
             syncBlocks={workspace.syncBlocks}
@@ -3913,6 +3540,13 @@ export default function App() {
               navigate("mock", { mockLobbyView: "setup" })
             }
             onOpenAIReview={openAIReview}
+            onCreateSync={() => setDialog({ kind: "sync" })}
+            onCreateQuestion={() => setDialog({ kind: "standalone-question" })}
+            onFavorite={(source, id, favorite) => {
+              if (source === "aggregate") updateSyncBlock(id, { favorite });
+              else setQuestionFavorite(id, favorite);
+            }}
+            onSearch={(query) => { setGlobalSearchQuery(query); navigate("search"); }}
           />
         ) : null}
 
@@ -4044,6 +3678,7 @@ export default function App() {
             onFocus={setSelectedMockInterviewId}
             onCreate={createMockInterview}
             onAppendMessage={appendMockInterviewMessage}
+            onUpdateHarness={updateMockInterviewHarness}
             onEnd={endMockInterview}
             onApplyAnalysis={applyMockInterviewAnalysis}
             onOpenSettings={() => navigate("settings")}
@@ -4075,6 +3710,7 @@ export default function App() {
           <InterviewDetail
             key={selectedInterview.id}
             interview={selectedInterview}
+            onShare={openShare}
             questions={workspace.questions}
             syncBlocks={workspace.syncBlocks}
             resumeExperiences={workspace.resumeExperiences}
@@ -4121,7 +3757,7 @@ export default function App() {
             resumeExperiences={workspace.resumeExperiences}
             backLabel={
               questionReturnView === "sync"
-                ? "返回同步块"
+                ? "返回聚合块"
                 : questionReturnView === "resume"
                   ? "返回简历经历"
                   : questionReturnView === "overview"
@@ -4130,6 +3766,7 @@ export default function App() {
             }
             onBack={closeQuestion}
             onOpenInterview={openInterview}
+            onShare={openShare}
             onOpenSync={openSync}
             onOpenResume={openResume}
             onUpdate={(questionId, input) => {
@@ -4140,8 +3777,9 @@ export default function App() {
         ) : null}
 
         {view === "sync" ? (
-          <SyncPage
+          <AggregateBlocksPage
             syncBlocks={workspace.syncBlocks}
+            onShare={openShare}
             questions={workspace.questions}
             resumeExperiences={workspace.resumeExperiences}
             selectedId={selectedSyncId}
@@ -4155,7 +3793,19 @@ export default function App() {
 
         {view === "resume" ? (
           <ResumePage
+            aiConfig={aiSettings.config}
+            aiReady={!aiSettings.loading && aiSettings.configured && (
+              Boolean(aiSettings.apiKey.trim()) ||
+              /^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(aiSettings.config.endpoint)
+            )}
+            onOpenSettings={() => navigate("settings")}
+            onParseResume={(input, signal) => aiClient.extractResume(aiSettings.config, aiSettings.apiKey, input, signal)}
+            onImportResume={async (inputs) => {
+              const imported = await importResumeExperiences(inputs);
+              notify(`已将 ${imported.length} 段简历经历导入本地`);
+            }}
             experiences={workspace.resumeExperiences}
+            onShare={openShare}
             questions={workspace.questions}
             syncBlocks={workspace.syncBlocks}
             focusedId={selectedResumeId}
@@ -4174,7 +3824,7 @@ export default function App() {
             onDelete={(experienceId) => {
               if (
                 !window.confirm(
-                  "确定删除这条简历经历吗？关联的问答和同步块不会被删除。",
+                  "确定删除这条简历经历吗？关联的问答和聚合块不会被删除。",
                 )
               ) {
                 return;
@@ -4189,6 +3839,15 @@ export default function App() {
         {view === "settings" ? (
           <SettingsPage
             hasData={hasData}
+            reviewCardsEnabled={reviewCardsEnabled}
+            onSetReviewCardsEnabled={(enabled) => {
+              setReviewCardsEnabled(enabled);
+              try {
+                window.localStorage.setItem("interview-atlas-home-flashcards", String(enabled));
+              } catch {
+                notify("主页显示已调整，但当前环境无法保存此设置，重启后将恢复默认。");
+              }
+            }}
             aiConfig={aiSettings.config}
             aiLoading={aiSettings.loading}
             aiError={aiSettings.error}
@@ -4305,7 +3964,7 @@ export default function App() {
                     : item.id === "questions"
                       ? "问答"
                       : item.id === "sync"
-                        ? "同步"
+                        ? "聚合块"
                         : "简历";
 
                 return (
@@ -4328,10 +3987,14 @@ export default function App() {
         </div>
       </nav>
 
+      {shareDocument ? (
+        <ShareModal document={shareDocument} onClose={() => setShareDocument(null)} />
+      ) : null}
+
       {dialog?.kind === "question" ? (
         <Modal
           title="添加原子问答"
-          description="这份回答属于当前面试实例，不会被同步块自动覆盖。"
+          description="这份回答属于当前面试实例，不会被聚合块自动覆盖。"
           onClose={() => setDialog(null)}
         >
           <QuestionForm
@@ -4348,7 +4011,7 @@ export default function App() {
       {dialog?.kind === "standalone-question" ? (
         <Modal
           title="新建原子问答"
-          description="独立创建的问题可以稍后关联面试记录或同步块。"
+          description="独立创建的问题可以稍后关联面试记录或聚合块。"
           onClose={() => setDialog(null)}
         >
           <QuestionForm
@@ -4366,10 +4029,10 @@ export default function App() {
       {dialog?.kind === "sync" ? (
         <Modal
           className="sync-block-modal"
-          title={dialog.questionId ? "关联到同步块" : "创建同步块"}
+          title={dialog.questionId ? "关联到聚合块" : "创建聚合块"}
           description={
             dialog.questionId
-              ? "选择已有同步块，或新建一份可持续修订的稳定回答。"
+              ? "选择已有聚合块来汇集相似问答，或新建聚合块并整理可复用的回答。"
               : "为重复问题维护一份稳定回答，并保留每次面试的实例内容。"
           }
           onClose={() => setDialog(null)}
@@ -4385,13 +4048,13 @@ export default function App() {
               linkQuestionToSyncBlock(dialog.questionId, syncBlockId);
               setDialog(null);
               openSync(syncBlockId);
-              notify("原子问答已关联到同步块");
+              notify("原子问答已关联到聚合块");
             }}
             onSubmit={(input) => {
               const syncBlock = createSyncBlock(input);
               setDialog(null);
               openSync(syncBlock.id);
-              notify("同步块已保存并建立引用");
+              notify("聚合块已保存并建立引用");
             }}
           />
         </Modal>

@@ -5,6 +5,7 @@ import {
   addMockInterview,
   addQuestion,
   addResumeExperience,
+  addResumeExperiences,
   addStandaloneQuestion,
   addSyncBlock,
   appendMockInterviewMessage,
@@ -49,6 +50,26 @@ const baseWorkspace = (): Workspace => ({
 });
 
 describe("workspace domain", () => {
+  it("imports resume experiences in one batch while preserving order and all existing content", () => {
+    const existing = addResumeExperience(baseWorkspace(), {
+      type: "工作", title: "原经历", organization: "原组织", period: "",
+      bullets: ["用户手写内容"], linkedQuestionIds: [], linkedSyncBlockIds: [],
+    }).workspace;
+    const draft = {
+      type: "实习", title: "第一段", organization: "示例公司", period: "2025",
+      bullets: ["保留原文业绩"], linkedQuestionIds: [], linkedSyncBlockIds: [],
+    };
+    const { workspace, experiences } = addResumeExperiences(existing, [draft, { ...draft, title: "第二段" }]);
+    expect(workspace.resumeExperiences.map((item) => item.title)).toEqual(["第一段", "第二段", "原经历"]);
+    expect(new Set(experiences.map((item) => item.id)).size).toBe(2);
+    expect(workspace.resumeExperiences[2]).toBe(existing.resumeExperiences[0]);
+    expect(workspace.interviews).toBe(existing.interviews);
+    expect(workspace.questions).toBe(existing.questions);
+    expect(() => addResumeExperiences(existing, [draft, { ...draft, title: " " }])).toThrow("标题");
+    expect(existing.resumeExperiences).toHaveLength(1);
+    expect(() => addResumeExperiences(existing, [])).toThrow();
+  });
+
   it("saves and removes interview organizations with valid collection members", () => {
     const created = addInterviewOrganization(baseWorkspace(), {
       title: " 目标公司 ",
@@ -115,10 +136,10 @@ describe("workspace domain", () => {
     expect(cleared.syncBlock.body).toBe("第一段\n第二段");
     expect(() =>
       updateSyncBlock(result.workspace, created.syncBlock.id, { title: "  " }),
-    ).toThrow("同步块标题不能为空");
+    ).toThrow("聚合块标题不能为空");
     expect(() =>
       updateSyncBlock(result.workspace, "missing", { title: "新标题" }),
-    ).toThrow("同步块不存在");
+    ).toThrow("聚合块不存在");
 
     const favorited = updateSyncBlock(
       result.workspace,

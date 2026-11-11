@@ -8,6 +8,7 @@ import {
   Link2,
   Pencil,
   Plus,
+  Upload,
   Trash2,
 } from "lucide-react";
 import {
@@ -23,6 +24,10 @@ import type {
   SyncBlock,
 } from "../domain/types";
 import { Modal } from "./Modal";
+import { ShareButton } from "./Share";
+import type { ShareTarget } from "../domain/share";
+import type { AIProviderConfig, AIResumeCandidate, AIResumeInput } from "../ai/types";
+import { ResumeImport } from "./ResumeImport";
 
 export interface ResumeDiffLine {
   kind: "same" | "added" | "removed";
@@ -208,7 +213,7 @@ function ResumeCreateForm({
             type="button"
             onClick={() => setRelationTab("sync")}
           >
-            同步块
+            聚合块
             <small>{syncBlockIds.length}</small>
           </button>
         </div>
@@ -245,7 +250,7 @@ function ResumeCreateForm({
           </fieldset>
         ) : (
           <fieldset className="question-picker resume-picker">
-            <legend>选择直接关联的同步块</legend>
+            <legend>选择直接关联的聚合块</legend>
             {syncBlocks.length ? (
               syncBlocks.map((syncBlock) => {
                 const checked = syncBlockIds.includes(syncBlock.id);
@@ -273,7 +278,7 @@ function ResumeCreateForm({
                 );
               })
             ) : (
-              <p className="empty-inline">暂无可关联的同步块。</p>
+              <p className="empty-inline">暂无可关联的聚合块。</p>
             )}
           </fieldset>
         )}
@@ -301,6 +306,7 @@ interface ResumeCardProps {
   onOpenSync: (id: string) => void;
   onUpdate: (input: CreateResumeExperienceInput) => void;
   onDelete: () => void;
+  onShare: (target: ShareTarget) => void;
 }
 
 function ResumeCard({
@@ -313,6 +319,7 @@ function ResumeCard({
   onOpenSync,
   onUpdate,
   onDelete,
+  onShare,
 }: ResumeCardProps) {
   const [type, setType] = useState(experience.type);
   const [title, setTitle] = useState(experience.title);
@@ -434,21 +441,24 @@ function ResumeCard({
                 .join(" · ") || "组织和时间尚未填写"}
             </p>
           </div>
-          <button
-            className="button secondary"
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggle();
-            }}
-          >
-            {expanded ? (
-              <ChevronDown size={14} aria-hidden="true" />
-            ) : (
-              <Pencil size={14} aria-hidden="true" />
-            )}
-            {expanded ? "收起" : "编辑"}
-          </button>
+          <div className="share-detail-actions" onClick={(event) => event.stopPropagation()}>
+            <ShareButton disabled={hasChanges} onClick={() => onShare({ kind: "resume", id: experience.id })} />
+            <button
+              className="button secondary"
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggle();
+              }}
+            >
+              {expanded ? (
+                <ChevronDown size={14} aria-hidden="true" />
+              ) : (
+                <Pencil size={14} aria-hidden="true" />
+              )}
+              {expanded ? "收起" : "编辑"}
+            </button>
+          </div>
         </header>
         <div className="resume-bullets">
           {experience.bullets.length ? (
@@ -463,6 +473,7 @@ function ResumeCard({
 
       {expanded ? (
         <div className="resume-expanded" onClick={(event) => event.stopPropagation()}>
+          {hasChanges ? <p className="share-draft-hint">应用修改后即可分享最新经历。</p> : null}
           {!showDiff ? (
             <>
               <div className="resume-editor-heading">
@@ -539,7 +550,7 @@ function ResumeCard({
               />
 
               <div className="resume-editor-heading relation-heading">
-                <strong>关联同步块 · {relatedSyncBlocks.length}</strong>
+                <strong>关联聚合块 · {relatedSyncBlocks.length}</strong>
                 <button
                   className="text-button"
                   type="button"
@@ -562,7 +573,7 @@ function ResumeCard({
                     </button>
                   ))
                 ) : (
-                  <p>暂无关联同步块</p>
+                  <p>暂无关联聚合块</p>
                 )}
               </div>
 
@@ -607,7 +618,7 @@ function ResumeCard({
                     {!questions.length ? <p>暂无原子问答。</p> : null}
                   </section>
                   <section>
-                    <strong>选择直接关联的同步块</strong>
+                    <strong>选择直接关联的聚合块</strong>
                     {syncBlocks.map((syncBlock) => (
                       <label key={syncBlock.id}>
                         <input
@@ -622,7 +633,7 @@ function ResumeCard({
                         <span>{syncBlock.title}</span>
                       </label>
                     ))}
-                    {!syncBlocks.length ? <p>暂无同步块。</p> : null}
+                    {!syncBlocks.length ? <p>暂无聚合块。</p> : null}
                   </section>
                 </div>
               ) : null}
@@ -674,7 +685,7 @@ function ResumeCard({
                 </button>
               </header>
               <p className="resume-diff-note">
-                确认后只更新这条简历经历，不会改写已关联的原子问答或同步块正文。
+                确认后只更新这条简历经历，不会改写已关联的原子问答或聚合块正文。
               </p>
 
               {metadataChanges.length ? (
@@ -733,13 +744,13 @@ function ResumeCard({
                     ))}
                     {syncRemoves.map((id) => (
                       <p className="removed" key={`remove-sync-${id}`}>
-                        − 解除同步块：
+                        − 解除聚合块：
                         {syncBlocks.find((item) => item.id === id)?.title ?? id}
                       </p>
                     ))}
                     {syncAdds.map((id) => (
                       <p className="added" key={`add-sync-${id}`}>
-                        + 关联同步块：
+                        + 关联聚合块：
                         {syncBlocks.find((item) => item.id === id)?.title ?? id}
                       </p>
                     ))}
@@ -769,6 +780,11 @@ function ResumeCard({
 }
 
 interface ResumePageProps {
+  aiConfig: AIProviderConfig;
+  aiReady: boolean;
+  onOpenSettings: () => void;
+  onParseResume: (input: AIResumeInput, signal: AbortSignal) => Promise<AIResumeCandidate[]>;
+  onImportResume: (inputs: CreateResumeExperienceInput[]) => Promise<void>;
   experiences: ResumeExperience[];
   questions: AtomicQuestion[];
   syncBlocks: SyncBlock[];
@@ -782,9 +798,15 @@ interface ResumePageProps {
     input: CreateResumeExperienceInput,
   ) => void;
   onDelete: (experienceId: string) => void;
+  onShare: (target: ShareTarget) => void;
 }
 
 export function ResumePage({
+  aiConfig,
+  aiReady,
+  onOpenSettings,
+  onParseResume,
+  onImportResume,
   experiences,
   questions,
   syncBlocks,
@@ -795,8 +817,10 @@ export function ResumePage({
   onCreate,
   onUpdate,
   onDelete,
+  onShare,
 }: ResumePageProps) {
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     if (!focusedId) return;
@@ -819,10 +843,16 @@ export function ResumePage({
             用真实经历支撑面试回答，并保持每条关联可追溯。
           </p>
         </div>
-        <button className="button primary" onClick={() => setCreating(true)}>
-          <Plus size={15} aria-hidden="true" />
-          新增经历
-        </button>
+        <div className="page-header-actions">
+          <button className="button secondary" onClick={() => setImporting(true)}>
+            <Upload size={15} aria-hidden="true" />
+            解析简历
+          </button>
+          <button className="button primary" onClick={() => setCreating(true)}>
+            <Plus size={15} aria-hidden="true" />
+            新增经历
+          </button>
+        </div>
       </header>
 
       {experiences.length ? (
@@ -841,6 +871,7 @@ export function ResumePage({
               onOpenSync={onOpenSync}
               onUpdate={(input) => onUpdate(experience.id, input)}
               onDelete={() => onDelete(experience.id)}
+              onShare={onShare}
             />
           ))}
         </div>
@@ -849,12 +880,28 @@ export function ResumePage({
           <FileUser size={30} strokeWidth={1.4} aria-hidden="true" />
           <h2>还没有简历经历</h2>
           <p>先录入一段实习、工作或项目经历，再把它关联到真实问答。</p>
-          <button className="button primary" onClick={() => setCreating(true)}>
-            <Plus size={15} aria-hidden="true" />
-            新增经历
-          </button>
+          <div className="page-header-actions">
+            <button className="button secondary" onClick={() => setImporting(true)}>
+              <Upload size={15} aria-hidden="true" /> 解析简历
+            </button>
+            <button className="button primary" onClick={() => setCreating(true)}>
+              <Plus size={15} aria-hidden="true" /> 新增经历
+            </button>
+          </div>
         </div>
       )}
+
+      {importing ? (
+        <ResumeImport
+          config={aiConfig}
+          aiReady={aiReady}
+          experiences={experiences}
+          onParse={onParseResume}
+          onImport={onImportResume}
+          onOpenSettings={onOpenSettings}
+          onClose={() => setImporting(false)}
+        />
+      ) : null}
 
       {creating ? (
         <Modal

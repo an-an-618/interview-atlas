@@ -1,0 +1,299 @@
+/* Shared interaction colors. Layout and the flashcard scene live in styles.css. */
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible,
+.review-stage:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+input[type="checkbox"],
+input[type="radio"],
+.share-modal .share-option input,
+.resume-relation-editor input,
+.ai-candidate input {
+  accent-color: var(--primary);
+}
+
+.button:is(.primary, .accent),
+.mock-composer button {
+  border-color: var(--primary);
+  color: var(--surface);
+  background: var(--primary);
+}
+
+.button:is(.primary, .accent):hover:not(:disabled),
+.app-shell .button.import-button:hover:not(:disabled),
+.mock-composer button:hover:not(:disabled) {
+  border-color: var(--primary-hover);
+  background: var(--primary-hover);
+}
+
+.button:is(.primary, .accent):active:not(:disabled),
+.app-shell .button.import-button:active:not(:disabled),
+.mock-composer button:active:not(:disabled) {
+  border-color: var(--primary-pressed);
+  background: var(--primary-pressed);
+}
+
+.button.secondary:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.button.secondary:active:not(:disabled) {
+  background: var(--paper-deep);
+}
+
+.button.quiet:hover:not(:disabled),
+.icon-button:hover:not(:disabled),
+.back-button:hover:not(:disabled) {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.button.danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: #f3d8d4;
+}
+
+.button.danger:active:not(:disabled) {
+  background: #edcbc7;
+}
+
+.text-button {
+  color: var(--primary);
+}
+
+.text-button:hover:not(:disabled) {
+  color: var(--primary-hover);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.app-shell .sidebar nav button:hover:not(.active):not(:disabled),
+.segmented button:hover:not(.active):not(:disabled),
+.resume-relation-tabs button:hover:not(.active):not(:disabled) {
+  color: var(--primary);
+  background: var(--surface-soft);
+}
+
+.segmented button.active,
+.interview-list-toolbar .segmented button.active,
+.resume-relation-tabs button.active,
+.organizer-mode-grid button.active,
+.organizer-mode-grid button[aria-pressed="true"],
+.sync-list-item.active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.sync-list-item:hover,
+.sync-list-item.active:hover {
+  border-color: var(--primary);
+}
+
+.interview-filter-trigger.active,
+.interview-organize-trigger.active,
+.interview-collection-pill:is(:hover, .active),
+.ai-provider-presets button.active,
+.transcription-provider-list button,
+.overview-review-queue button.active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: none;
+}
+
+.interview-filter-count,
+.interview-collection-pill.active small,
+.import-steps > span > span.active {
+  color: var(--surface);
+  background: var(--primary);
+}
+
+.active-interview-collection strong,
+.interview-question-nav button.active > span,
+.global-search-scopes button.active,
+.sync-association-tabs button.active {
+  color: var(--primary);
+}
+
+.global-search-scopes button.active::after {
+  background: var(--primary);
+}
+
+.interview-question-nav button.active {
+  border-left-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.sync-association-tabs button.active {
+  border-bottom-color: var(--primary);
+}
+
+.settings-switch[aria-checked="true"] .settings-switch-track,
+.import-candidate-check input:checked + span,
+.sync-block-option input:checked + .sync-block-radio,
+.question-option input:checked + .check-box {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.settings-switch:hover:not(:disabled) .settings-switch-track {
+  border-color: var(--primary);
+}
+
+.settings-switch[aria-checked="true"]:hover:not(:disabled) .settings-switch-track {
+  background: var(--primary-hover);
+}
+
+.import-candidate.selected:hover,
+.resume-import-upload:is(:hover, :focus-within),
+.resume-relation-list > button:hover {
+  border-color: var(--primary);
+  background: var(--surface-soft);
+}
+
+.sync-block-option.selected,
+.question-option:has(input:checked) {
+  background: var(--primary-soft);
+}
+
+/* Hidden native controls transfer the keyboard ring to their visible marks. */
+.import-candidate-check input:focus-visible + span,
+.sync-block-option input:focus-visible + .sync-block-radio,
+.question-option input:focus-visible + .check-box {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.global-search-box,
+.search-field,
+.answer-editor {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+.global-search-box:focus-within,
+.search-field:focus-within,
+.sync-search-toolbar .search-field:focus-within,
+.question-picker-search:focus-within,
+.answer-editor:focus-within {
+  border-color: var(--primary);
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* The home header uses a single fine underline as its focus indicator. */
+.home-search:focus-within,
+.home-search :is(input, button):focus,
+.home-search :is(input, button):focus-visible {
+  outline: 0;
+  box-shadow: none;
+}
+
+.modal :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]),
+.settings-page :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]),
+.question-content-editor.notes-editor,
+.inline-text-editor {
+  background-color: var(--surface);
+}
+
+.modal :is(input, select, textarea):focus,
+.settings-page :is(input, select, textarea):focus,
+.interview-filter-select select:focus,
+.interview-ai-suggestion-detail :is(input, textarea):focus,
+.question-content-editor.notes-editor:focus,
+.inline-text-editor:focus,
+.import-metadata-fields input:focus,
+.import-candidate > header > input:focus,
+.recorder-page :is(input, textarea):focus,
+.resume-page :is(input, select, textarea):focus,
+.mock-setup :is(input, select, textarea):focus {
+  border-color: var(--primary);
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.answer-editor .answer-editor-row textarea:focus-visible {
+  outline: 0;
+  box-shadow: none;
+}
+
+.ai-review-stage-nav a.active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.resume-bullet-editor,
+.resume-metadata-editor :is(input, select),
+.resume-create-form select,
+.ai-candidate {
+  background: var(--surface);
+}
+
+.ai-candidate.selected {
+  border-color: var(--primary);
+}
+
+.interview-detail-toolbar,
+.ai-review-page-toolbar,
+.ai-review-stage-nav,
+.mock-chat-header {
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
+}
+
+.toast {
+  background: var(--primary);
+}
+
+@media (hover: none) {
+  /* Avoid a sticky raised button after touch activation. */
+  .button:hover:not(:disabled),
+  .icon-button:hover:not(:disabled),
+  .back-button:hover:not(:disabled) {
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .mobile-settings.active,
+  .mobile-search.active,
+  .bottom-nav button.active,
+  .bottom-nav .bottom-overview.active,
+  .bottom-nav .bottom-mock.active,
+  .bottom-nav .bottom-knowledge-panel button.active {
+    color: var(--primary);
+    background: var(--primary-soft);
+  }
+
+  .bottom-nav .bottom-create-icon {
+    border-color: var(--surface);
+    background: var(--primary);
+    box-shadow:
+      0 0 0 1px var(--line),
+      0 9px 20px rgba(37, 68, 56, 0.18);
+  }
+
+  .bottom-nav .bottom-create:active .bottom-create-icon {
+    background: var(--primary-pressed);
+  }
+
+  .bottom-nav,
+  .bottom-knowledge-panel {
+    border-color: var(--line);
+    background: var(--surface);
+  }
+}

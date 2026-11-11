@@ -35,7 +35,7 @@ const assetTypes: Array<{
   { id: "all", label: "全部资产", shortLabel: "全部" },
   { id: "interview", label: "面试记录", shortLabel: "面试" },
   { id: "question", label: "原子问答", shortLabel: "问答" },
-  { id: "sync", label: "同步块", shortLabel: "同步块" },
+  { id: "sync", label: "聚合块", shortLabel: "聚合块" },
   { id: "resume", label: "简历经历", shortLabel: "简历" },
 ];
 
@@ -45,7 +45,7 @@ const resultLabels: Record<
 > = {
   interview: { label: "面试记录", icon: FileText },
   question: { label: "原子问答", icon: CircleHelp },
-  sync: { label: "同步块", icon: Link2 },
+  sync: { label: "聚合块", icon: Link2 },
   resume: { label: "简历经历", icon: FileUser },
 };
 
