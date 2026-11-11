@@ -32,6 +32,9 @@ import {
 import { MockInterviewRuntime, type MockInterviewRuntimeOptions } from "../ai/mockInterviewRuntime";
 import { normalizeMockCompany } from "../ai/mockInterviewContext";
 import { getMockInterviewProgress } from "../domain/mockInterviewHarness";
+import { useWorkbenchState } from "../hooks/useWorkbenchState";
+import { ReviewWorkspace } from "./ReviewWorkspace";
+import type { KnowledgeTarget } from "../domain/workbench";
 import type { MockInterviewHarness, MockInterviewMessage } from "../domain/types";
 import mockInterviewScene from "../assets/mock-interview-scene.png";
 import mockInterviewer from "../assets/mock-interviewer.png";
@@ -51,7 +54,7 @@ import type {
 interface MockInterviewPageProps {
   workspace: Workspace;
   focusedId: string | null;
-  initialLobbyView?: "home" | "setup";
+  initialLobbyView?: "home" | "setup" | "history";
   configured: boolean;
   config: AIProviderConfig;
   apiKey: string;
@@ -77,6 +80,8 @@ interface MockInterviewPageProps {
   ) => Promise<MockInterviewSession>;
   onOpenSettings: () => void;
   onOpenInterview: (id: string) => void;
+  onOpenKnowledge?: (target: KnowledgeTarget) => void;
+  onFindKnowledge?: (query: string) => void;
 }
 
 function formatSessionDate(value: string): string {
@@ -108,20 +113,20 @@ function MockInterviewLobby({
 }: {
   workspace: Workspace;
   sessions: MockInterviewSession[];
-  initialView: "home" | "setup";
+  initialView: "home" | "setup" | "history";
   configured: boolean;
   config: AIProviderConfig;
   onStart: (input: CreateMockInterviewInput) => Promise<void>;
   onFocus: (id: string) => void;
   onOpenSettings: () => void;
 }) {
-  const [company, setCompany] = useState("");
-  const [role, setRole] = useState("");
-  const [round, setRound] = useState("");
-  const [jobDescription, setJobDescription] = useState("");
-  const [additionalInfo, setAdditionalInfo] = useState("");
-  const [targetQuestionCount, setTargetQuestionCount] = useState(8);
-  const [interviewerPrompt, setInterviewerPrompt] = useState(
+  const [company, setCompany] = useWorkbenchState("mock-company", "");
+  const [role, setRole] = useWorkbenchState("mock-role", "");
+  const [round, setRound] = useWorkbenchState("mock-round", "");
+  const [jobDescription, setJobDescription] = useWorkbenchState("mock-jd", "");
+  const [additionalInfo, setAdditionalInfo] = useWorkbenchState("mock-additional", "");
+  const [targetQuestionCount, setTargetQuestionCount] = useWorkbenchState("mock-count", 8);
+  const [interviewerPrompt, setInterviewerPrompt] = useWorkbenchState("mock-strategy",
     DEFAULT_MOCK_INTERVIEWER_PROMPT,
   );
   const [lobbyView, setLobbyView] = useState<"home" | "setup" | "history">(
@@ -953,6 +958,8 @@ export function MockInterviewPage({
   onApplyAnalysis,
   onOpenSettings,
   onOpenInterview,
+  onOpenKnowledge,
+  onFindKnowledge,
 }: MockInterviewPageProps) {
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
@@ -965,6 +972,10 @@ export function MockInterviewPage({
   const sessions = [...workspace.mockInterviews].sort((left, right) =>
     right.startedAt.localeCompare(left.startedAt),
   );
+  const [, setLastTask] = useWorkbenchState<{ key: string; at: string } | null>("last-task", null);
+  useEffect(() => {
+    if (session?.status === "active") setLastTask({ key: `mock:${session.id}`, at: session.updatedAt });
+  }, [session?.id, session?.status, session?.updatedAt]);
 
   runtimeOptionsRef.current = {
     client, config, apiKey, workspace, create: onCreate, append: onAppendMessage,
@@ -1022,8 +1033,9 @@ export function MockInterviewPage({
 
   if (session.status === "completed") {
     return (
-      <MockInterviewReport
+      <ReviewWorkspace
         session={session}
+        workspace={workspace}
         analyzing={analyzing}
         error={error || session.harness?.error || null}
         onRetry={() => void runtimeRef.current?.retry(session.id)}
@@ -1031,7 +1043,9 @@ export function MockInterviewPage({
           setError(null);
           onFocus(null);
         }}
-        onOpenInterview={onOpenInterview}
+        onFocus={onFocus}
+        onOpen={target => onOpenKnowledge ? onOpenKnowledge(target) : target.kind === "interview" ? onOpenInterview(target.id) : undefined}
+        onFind={query => onFindKnowledge?.(query)}
       />
     );
   }

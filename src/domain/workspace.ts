@@ -459,6 +459,11 @@ export function resolveAIReviewQuestion(
     });
     next = result.workspace;
     createdQuestionId = result.question.id;
+    next = {
+      ...next,
+      questions: next.questions.map(q => q.id === createdQuestionId
+        ? { ...q, sourceExcerpt: candidate.sourceExcerpt } : q),
+    };
   }
 
   const now = timestamp();

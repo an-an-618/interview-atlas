@@ -114,7 +114,7 @@ export function ReviewCards({
   onFavorite: (source: ReviewSource, id: string, favorite: boolean) => void;
   compact?: boolean;
 }) {
-  const [flipped, setFlipped] = useState(false);
+  const { flipped, setFlipped } = deck;
   const [step, setStep] = useState(0);
   const [offset, setOffset] = useState(0);
   const [turning, setTurning] = useState<Direction | null>(null);
@@ -136,7 +136,6 @@ export function ReviewCards({
   const today = new Intl.DateTimeFormat("zh-CN", { dateStyle: "full" }).format(new Date());
 
   useEffect(() => {
-    setFlipped(false);
     setOffset(0);
     gesture.current = null;
   }, [deck.currentId, deck.source]);
@@ -149,9 +148,10 @@ export function ReviewCards({
     const stack = stage.querySelector(".review-card-stack")!;
     const axis = stage.querySelector(".review-carousel-axis")!.getBoundingClientRect();
     const box = stack.getBoundingClientRect();
-    const radiusX = axis.width / 2;
-    const radiusY = axis.height / 2;
-    const axisX = axis.left + radiusX - box.left - box.width / 2;
+    const region = stage.getBoundingClientRect();
+    const radiusX = Math.min(axis.width / 2, region.width * .34);
+    const radiusY = Math.min(axis.height / 2, region.height * .24);
+    const axisX = axis.left + axis.width / 2 - box.left - box.width / 2;
     const axisY = axis.top - box.top - box.height / 2;
     const animations = Array.from(stack.querySelectorAll<HTMLElement>(".review-card")).map((element) => {
       // Every animated node is already the actual card in its final slot.
@@ -172,10 +172,19 @@ export function ReviewCards({
         const landing = smoothStep((progress - 0.58) / (SHUFFLE_STOP - 0.58));
         const orbitWeight = entering * (1 - landing);
         const blend = (orbit: number, final: number) => final + (orbit - final) * orbitWeight;
+        const orbitAngle = Math.sin(angle) * 16;
+        const scale = .5 + .5 * depth;
+        const radians = orbitAngle * Math.PI / 180;
+        const halfWidth = (box.width * Math.abs(Math.cos(radians)) + box.height * Math.abs(Math.sin(radians))) * scale / 2;
+        const halfHeight = (box.height * Math.abs(Math.cos(radians)) + box.width * Math.abs(Math.sin(radians))) * scale / 2;
+        const centerX = box.left + box.width / 2, centerY = box.top + box.height / 2;
+        const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value));
+        const x = clamp(axisX + radiusX * Math.sin(angle), region.left + halfWidth + 4 - centerX, region.right - halfWidth - 4 - centerX);
+        const y = clamp(axisY + radiusY * (1 - Math.cos(angle)), region.top + halfHeight + 4 - centerY, region.bottom - halfHeight - 4 - centerY);
         return {
           offset: progress,
           transform: progress >= SHUFFLE_STOP ? restTransform
-            : `translate3d(${blend(axisX + radiusX * Math.sin(angle), matrix.m41)}px, ${blend(axisY + radiusY * (1 - Math.cos(angle)), matrix.m42)}px, 0) rotate(${blend(Math.sin(angle) * 16, restAngle)}deg) scale(${blend(0.5 + 0.5 * depth, restScale)})`,
+            : `translate3d(${blend(x, matrix.m41)}px, ${blend(y, matrix.m42)}px, 0) rotate(${blend(orbitAngle, restAngle)}deg) scale(${blend(scale, restScale)})`,
           opacity: progress >= SHUFFLE_STOP ? restOpacity
             : blend(0.18 + 0.82 * depth, restOpacity) * entering,
           filter: progress >= SHUFFLE_STOP ? restFilter : `brightness(${blend(0.7 + 0.3 * depth, position === 0 ? 1 : 0.87)}) saturate(${blend(0.5 + 0.5 * depth, position === 0 ? 1 : 0.45)})`,
