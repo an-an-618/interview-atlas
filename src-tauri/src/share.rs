@@ -5,7 +5,9 @@ fn validate_image(name: &str, bytes: &[u8]) -> Result<(), String> {
     if name.is_empty()
         || name.len() > 240
         || !name.ends_with(".png")
-        || name.chars().any(|c| c.is_control() || "<>:\"/\\|?*".contains(c))
+        || name
+            .chars()
+            .any(|c| c.is_control() || "<>:\"/\\|?*".contains(c))
     {
         return Err("图片文件名无效。".into());
     }
@@ -101,7 +103,10 @@ mod tests {
         save_to_directory(&directory, "分享.png", &bytes).unwrap();
         save_to_directory(&directory, "分享.png", &bytes).unwrap();
         assert_eq!(std::fs::read(directory.join("分享.png")).unwrap(), bytes);
-        assert_eq!(std::fs::read(directory.join("分享 (1).png")).unwrap(), bytes);
+        assert_eq!(
+            std::fs::read(directory.join("分享 (1).png")).unwrap(),
+            bytes
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 }

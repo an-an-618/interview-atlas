@@ -288,6 +288,11 @@ const verifyCards = async () => {
       if (state.text.length > 200) {
         assert.ok(state.fullHeight > state.height && state.overflow === "auto", "exceptional question scrolls in its own region");
         await shot(titles, `long-title-${viewport.width}`);
+        await titles.waitForFunction(() =>
+          document.querySelector(".page")?.getAnimations({ subtree: true })
+            .every((animation) => animation.playState === "finished"),
+        );
+        await titles.locator(".review-card-active .review-question-link").scrollIntoViewIfNeeded();
         const box = await titles.locator(".review-card-active .review-question-link").boundingBox();
         const id = await current(titles);
         const pageScroll = await titles.evaluate(() => scrollY);
