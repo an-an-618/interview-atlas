@@ -1770,7 +1770,6 @@ html:has(.overview-page) {
 .review-edge:hover,
 .review-edge:focus-visible {
   opacity: 1;
-  transform-style: preserve-3d;
 }
 
 .review-edge:hover > span {
@@ -11674,6 +11673,7 @@ html:has(.overview-page) {
   box-shadow: none;
   overflow: visible;
   opacity: 1;
+  transform-style: preserve-3d;
   transform: translate3d(calc(var(--slot-x) + var(--drag-x, 0px)), var(--slot-y), 0) rotate(var(--slot-angle)) scale(var(--slot-scale));
   transition: transform 420ms cubic-bezier(0.22, 0.75, 0.25, 1), opacity 420ms ease, filter 420ms ease;
 }
@@ -11769,11 +11769,15 @@ html:has(.overview-page) {
   background: var(--surface);
   box-shadow: 0 22px 48px -23px #40331e45, 0 2px 5px #40331e0b;
   overflow: hidden;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  /* WebKit can flatten a filtered carousel ancestor and paint the reversed
-     face despite backface-visibility. Swap visible faces at the flip midpoint. */
+  backface-visibility: visible;
+  -webkit-backface-visibility: visible;
+  /* Swap visible faces at the flip midpoint. Explicit inherited visibility
+     also invalidates WebKit text/SVG paint after module navigation. */
   transition: visibility 0s linear calc(var(--review-flip-duration) / 2);
+}
+
+.review-card-face * {
+  visibility: inherit;
 }
 
 .review-card-front {

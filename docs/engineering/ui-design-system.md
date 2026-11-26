@@ -185,7 +185,7 @@ npm run test:ui
 
 浏览器检查使用独立示例数据，覆盖六个一级入口、面试与问答详情、设置、导入和问答弹窗；检查颜色、尺寸、图标、焦点及保存、翻面、切换、洗牌。覆盖 320–1904px 窗口与 Chrome 原生 75%–200% 缩放。不可修改用户日常工作区数据。
 
-Mac／Safari 与手机 WebKit 的补充检查：`npx playwright install webkit` 后执行 `npm run test:webkit`，覆盖桌面、平板、390／320px 手机布局、闪卡与保存刷新。闪卡正反面必须建立明确的 3D 变换，避免 WebKit 在静止正面显示镜像背面文字。
+Mac／Safari 与手机 WebKit 的补充检查：`npx playwright install webkit` 后执行 `npm run test:webkit`，覆盖桌面、平板、390／320px 手机布局、正常／减少动效、重复翻面与保存刷新。闪卡保留 3D 翻面动画，中点切换可见面，子元素显式继承面的可见性；切换面时重新建立面内节点，保留外层旋转与卡流，避免 WebKit 的镜像透出及文字／SVG 绘制缓存失效。检查须确认答案实际像素有绘制，不能只判断 DOM 可见性。
 
 `check-theme-consistency.mjs` 转接到当前页面检查；旧脚本需适配当前顶部导航后才能用于验收。截图与检查结果可以通过 `SCREENSHOT_DIR` 保存。
 

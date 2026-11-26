@@ -68,9 +68,12 @@ function Flashcard({
       <button type="button" className="review-detail-link" onClick={onOpen}>查看详情 <ArrowRight size={13} aria-hidden="true" /></button>
     </footer>
   );
+  // Recreate each face when it changes roles: WebKit can otherwise reuse a
+  // hidden face's stale text/SVG paint after repeated flips. The flipper stays
+  // mounted, so its rotation and the surrounding carousel remain continuous.
   return (
     <div className={`review-flipper${flipped ? " is-flipped" : ""}`}>
-      <div className="review-card-face review-card-front" inert={preview || flipped} aria-hidden={preview || flipped || undefined}>
+      <div key={`front-${flipped}`} className="review-card-face review-card-front" inert={preview || flipped} aria-hidden={preview || flipped || undefined}>
         {header}
         <div className="review-card-question">
           <span className="review-part-label">问题</span>
@@ -84,7 +87,7 @@ function Flashcard({
         </button>
         {footer}
       </div>
-      <div className="review-card-face review-card-back" inert={preview || !flipped} aria-hidden={preview || !flipped || undefined}>
+      <div key={`back-${flipped}`} className="review-card-face review-card-back" inert={preview || !flipped} aria-hidden={preview || !flipped || undefined}>
         {header}
         <section className="review-card-answer" aria-label="卡片回答">
           <span className="review-part-label">{block ? "聚合回答" : "回答"}</span>

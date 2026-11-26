@@ -48,10 +48,13 @@ jobs:
         run: npm test
 
       - name: Install browser for responsive checks
-        run: npx playwright install chromium
+        run: npx playwright install chromium webkit
 
       - name: Check desktop, mobile, touch and browser zoom
         run: npm run test:ui
+
+      - name: Check Safari desktop and mobile rendering
+        run: npm run test:webkit
 
       - name: Check TypeScript
         run: npm run typecheck
