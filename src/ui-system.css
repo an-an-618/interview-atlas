@@ -1,0 +1,196 @@
+/* Canonical control contract. Page styles may arrange controls, not restyle them.
+   See docs/engineering/ui-design-system.md. Loaded last for legacy compatibility. */
+:root {
+  --paper: #f8f7f3;
+  --surface: #fdfcf8;
+  --surface-soft: #f2f3ec;
+  --line: #dedfd5;
+  --primary-soft: #e5e8dd;
+  --accent: #254438;
+  --accent-soft: #e5e8dd;
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-6: 24px;
+  --ui-space-8: 32px;
+  --ui-control-compact: 32px;
+  --ui-control-default: 40px;
+  --ui-control-prominent: 44px;
+  --ui-radius-control: 8px;
+  --ui-radius-panel: 12px;
+  --ui-font-control: 14px;
+  --ui-font-compact: 13px;
+  --ui-icon-meta: 14px;
+  --ui-icon-action: 16px;
+  --ui-icon-control: 18px;
+  --ui-icon-nav: 20px;
+  --ui-icon-stroke: 1.75;
+  --ui-focus: #426b55;
+}
+/* Named icons and legacy Lucide drawings share one stroke vocabulary. */
+svg.lucide { stroke-width: var(--ui-icon-stroke); flex-shrink: 0; }
+.ui-icon-meta { width: var(--ui-icon-meta); height: var(--ui-icon-meta); }
+.ui-icon-action { width: var(--ui-icon-action); height: var(--ui-icon-action); }
+.ui-icon-control { width: var(--ui-icon-control); height: var(--ui-icon-control); }
+.ui-icon-nav { width: var(--ui-icon-nav); height: var(--ui-icon-nav); }
+
+/* Compatibility selectors migrate existing pages to the same component contract. */
+:is(.app-shell, .modal, .extraction-notifications) :is(.button, .icon-button, .text-button, .back-button),
+.ui-button {
+  --control-height: var(--ui-control-default);
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; gap: var(--ui-space-2);
+  height: var(--control-height); min-height: var(--control-height);
+  padding: 0 var(--ui-space-4); border: 1px solid transparent;
+  border-radius: var(--ui-radius-control);
+  font-size: var(--ui-font-control); font-weight: 500; line-height: 20px;
+  white-space: nowrap; box-shadow: none; text-decoration: none;
+}
+:is(.app-shell, .modal) :is(.button, .icon-button, .text-button, .back-button):is(:hover, :active) {
+  transform: none; box-shadow: none;
+}
+:is(.app-shell, .modal) :is(.text-button, .back-button) {
+  --control-height: var(--ui-control-compact);
+  padding-inline: var(--ui-space-2); font-size: var(--ui-font-compact);
+  color: var(--primary); background: transparent;
+}
+:is(.app-shell, .modal) .text-button:hover:not(:disabled),
+:is(.app-shell, .modal) .back-button:hover:not(:disabled) {
+  background: var(--surface-soft); text-decoration: none;
+}
+:is(.app-shell, .modal, .extraction-notifications) .icon-button {
+  width: var(--control-height); padding: 0; color: var(--ink-soft); background: transparent;
+}
+:is(.app-shell, .modal) .icon-button:hover:not(:disabled) { color: var(--primary); background: var(--primary-soft); }
+:is(.app-shell, .modal) .icon-button[aria-pressed="true"] { color: var(--primary); background: var(--primary-soft); }
+:is(.app-shell, .modal) .button.secondary { color: var(--ink-soft); background: var(--surface); border-color: var(--line); }
+:is(.app-shell, .modal) .button.secondary:hover:not(:disabled) { color: var(--primary); background: var(--surface-soft); border-color: #a3b0a0; }
+:is(.app-shell, .modal) .button.secondary:active:not(:disabled) { background: var(--primary-soft); }
+:is(.app-shell, .modal) .button.quiet { color: var(--ink-soft); background: transparent; }
+:is(.app-shell, .modal) .button.quiet:hover:not(:disabled) { color: var(--primary); background: var(--surface-soft); }
+:is(.app-shell, .modal) .button.danger { color: var(--danger); border-color: #e5beba; background: var(--danger-soft); }
+:is(.app-shell, .modal) :is(.button, .icon-button)[data-ui-size="compact"] { --control-height: var(--ui-control-compact); font-size: var(--ui-font-compact); padding-inline: var(--ui-space-3); }
+:is(.app-shell, .modal) .button[data-ui-size="prominent"] { --control-height: var(--ui-control-prominent); padding-inline: var(--ui-space-6); }
+:is(.app-shell, .modal) .icon-button[data-ui-size="compact"] { padding: 0; }
+:is(.app-shell, .modal) :is(.button, .text-button, .back-button) svg.lucide { width: var(--ui-icon-action); height: var(--ui-icon-action); }
+:is(.app-shell, .modal, .extraction-notifications) .icon-button svg.lucide { width: var(--ui-icon-control); height: var(--ui-icon-control); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+:is(button, a, summary, [role="button"], [role="link"], .review-stage):focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 3px; }
+.ui-loading { animation: ui-spin 1s linear infinite; }
+@keyframes ui-spin { to { transform: rotate(360deg); } }
+
+/* Selection is a state, not a competing black call-to-action. */
+:is(.app-shell, .modal) :is(.segmented, .review-source-picker) {
+  display: inline-flex; gap: var(--ui-space-1); padding: var(--ui-space-1);
+  border: 1px solid var(--line); border-radius: var(--ui-radius-control); background: transparent;
+}
+:is(.app-shell, .modal) :is(.workspace-tabs, .segmented, .review-source-picker, .organize-question-filters) button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: var(--ui-control-compact); padding: 0 var(--ui-space-3);
+  border: 1px solid transparent; border-radius: var(--ui-radius-control);
+  font-size: var(--ui-font-compact); font-weight: 500; line-height: 20px;
+  color: var(--muted); background: transparent;
+}
+:is(.app-shell, .modal) :is(.workspace-tabs, .segmented, .review-source-picker, .organize-question-filters) button:is(.active, [aria-pressed="true"]) {
+  color: var(--primary); background: var(--primary-soft); border-color: transparent;
+}
+:is(.app-shell, .modal) :is(.workspace-tabs, .segmented, .review-source-picker, .organize-question-filters) button:hover:not(:disabled):not(.active):not([aria-pressed="true"]) { color: var(--primary); background: var(--surface-soft); }
+.review-source-picker svg.lucide { width: var(--ui-icon-action); height: var(--ui-icon-action); }
+.app-shell .directory-row.active { color: var(--primary); background: var(--primary-soft); border-left-color: var(--primary); }
+.workspace-global-header > nav button.active { border-bottom-color: var(--primary); }
+
+/* Existing resource pages share the quiet reading surface of the current UI. */
+.app-shell :is(.sync-detail,.sync-list-item,.sync-list-heading,.question-document,
+  .question-document-section,.question-relations > section,.resume-card,
+  .interview-detail-nav,.interview-detail-main,.interview-detail-toolbar,
+  .interview-detail-hero,.question-block,.source-band,.interview-ai-review-trigger,
+  .relation-row,.followup-row) {
+  border: 0; box-shadow: none; background: transparent;
+}
+.app-shell .sync-list-item { border-radius: var(--ui-radius-control); }
+.app-shell .sync-list-item.active { color: var(--primary); background: var(--primary-soft); }
+.app-shell .sync-list-item:hover { background: var(--surface-soft); transform: none; }
+.app-shell .interview-question-nav button { border: 0; border-radius: var(--ui-radius-control); }
+.app-shell .interview-question-nav button.active { color: var(--primary); background: var(--primary-soft); }
+.app-shell .sync-reference { color: var(--primary); border: 0; border-radius: var(--ui-radius-control); background: var(--primary-soft); }
+.app-shell .sync-reference::before { display: none; }
+.app-shell .sync-reference small { color: var(--primary); }
+.app-shell .interview-detail-hero h1 em { color: var(--primary); }
+.app-shell .notice.sample-notice { background: var(--surface-soft); border: 0; color: var(--muted); }
+.app-shell :is(.sync-list,.sync-detail,.interview-detail-nav) { scrollbar-color: transparent transparent; }
+.app-shell :is(.sync-list,.sync-detail,.interview-detail-nav):is(:hover,:focus-within) { scrollbar-color: #bac3b7 transparent; }
+
+/* The card scene retains its choreography; its actions use the shared contract. */
+.app-shell .review-hero-footer .review-shuffle-button {
+  --control-height: var(--ui-control-prominent); min-width: 132px;
+  position: relative; z-index: 6;
+  padding: 0 var(--ui-space-6); border-radius: var(--ui-radius-control);
+  color: var(--muted); background: transparent; border-color: transparent; box-shadow: none;
+}
+.app-shell .review-hero-footer .review-shuffle-button:is(:hover,:active):not(:disabled) {
+  color: var(--ink-soft); background: transparent; border-color: transparent; box-shadow: none;
+}
+.app-shell :is(.review-flip-button, .review-detail-link, .review-related-link) {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--ui-control-compact); min-height: var(--ui-control-compact); padding: 0 8px;
+  border-radius: var(--ui-radius-control); font-size: var(--ui-font-compact);
+  font-weight: 500; color: var(--primary); background: transparent; white-space: nowrap; flex-shrink: 0;
+}
+.app-shell .review-card-footer { flex-wrap: wrap; }
+.app-shell :is(.review-flip-button, .review-detail-link, .review-related-link):hover { background: var(--primary-soft); }
+.app-shell :is(.review-flip-button, .review-detail-link, .review-related-link) svg.lucide { width: var(--ui-icon-action); height: var(--ui-icon-action); }
+.app-shell .review-card-kind svg.lucide,
+.app-shell .review-gesture-hint svg.lucide { width: var(--ui-icon-meta); height: var(--ui-icon-meta); }
+.app-shell .review-card-star { --control-height: var(--ui-control-compact); width: var(--control-height); height: var(--control-height); min-height: var(--control-height); padding: 0; }
+.app-shell .review-card-star.active { color: #8b692b; background: transparent; }
+.app-shell .review-edge svg.lucide { width: var(--ui-icon-nav); height: var(--ui-icon-nav); }
+.app-shell .followup-row > svg.lucide { width: var(--ui-icon-action); height: var(--ui-icon-action); color: var(--muted); }
+.app-shell .directory-row strong > svg.lucide { width: var(--ui-icon-action); height: var(--ui-icon-action); }
+.app-shell .data-settings-content .action-section > .button { font-weight: 500; }
+.app-shell .knowledge-mobile-back { display: none; }
+
+/* Resting fields blend into paper; only the active field shows an underline.
+   Search retains one persistent line as its entry affordance. */
+:is(.app-shell, .modal) :is(input, textarea, select):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+:is(.app-shell, .modal) .answer-editor {
+  border: 0; border-bottom: 1px solid transparent; border-radius: 0;
+  background-color: transparent; box-shadow: none;
+}
+:is(.app-shell, .modal) .search-field,
+.global-search-box { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; box-shadow: none; }
+:is(.app-shell, .modal) :is(input, textarea, select):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):hover:not(:disabled) {
+  background-color: var(--surface-soft);
+}
+:is(.app-shell, .modal) :is(input, textarea, select):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus,
+:is(.app-shell, .modal) :is(.search-field, .answer-editor):focus-within,
+.global-search-box:focus-within { border-bottom-color: var(--ui-focus); outline: 0; box-shadow: none; }
+:is(.search-field, .workspace-global-search, .global-search-box) input { border: 0 !important; }
+.app-shell .answer-editor .answer-editor-row textarea { border: 0; }
+.app-shell .knowledge-object-list .directory-row.active { border: 0; }
+.app-shell .workspace-global-search:focus-within { border-color: var(--ui-focus); }
+.app-shell .organize-question-field textarea:disabled,
+.app-shell .knowledge-title:disabled { opacity: 1; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
+.modal { border-radius: var(--ui-radius-panel); }
+
+@container (max-width:500px) {
+  .home-flashcards .review-card-footer { padding-inline: 12px; }
+  .home-flashcards .review-card-footer :is(.review-related-link, .review-detail-link) { padding-inline: 2px; font-size: 12px; }
+}
+
+@media (max-width:650px), (pointer:coarse) {
+  :root { --ui-control-compact: 44px; --ui-control-default: 44px; }
+  .app-shell .review-card-star { --control-height: 44px; }
+  :is(.app-shell, .modal) .button { padding-inline: 12px; }
+  .app-shell .data-settings-content .action-section > .button { height: 44px; min-height: 44px; }
+  .app-shell .review-card-footer { gap: 4px; }
+  .app-shell :is(.review-detail-link, .review-related-link) { padding-inline: 2px; font-size: 12px; gap: 4px; }
+  .app-shell .review-source-picker button { padding-inline: 10px; }
+}
+@media (max-width:650px) { .app-shell .knowledge-mobile-back { display: inline-flex; } }
+@media (max-width:380px) {
+  .app-shell .organize-save-actions .workspace-actions { flex-wrap: wrap; }
+  .app-shell .organize-save-actions .button { font-size: var(--ui-font-compact); padding-inline: 10px; }
+}
+@media (prefers-reduced-motion:reduce) { .ui-loading { animation: none; } }

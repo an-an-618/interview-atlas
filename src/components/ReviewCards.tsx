@@ -1,9 +1,10 @@
-import { ArrowDown, ArrowLeft, ArrowRight, BookOpen, Layers, Link2, Plus, Rotate3D, Shuffle, Star } from "lucide-react";
+import { ArrowLeft, ArrowRight, Layers, Link2, Plus } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { currentReviewId, type ReviewPile, type ReviewSource } from "../domain/reviewDeck";
 import type { AtomicQuestion, SyncBlock } from "../domain/types";
 import type { ReviewDeckController } from "../hooks/useReviewDeck";
 import { AnswerOutline } from "./AnswerOutline";
+import { Button, IconButton, UIIcon } from "./UI";
 
 type Direction = "previous" | "next";
 type Card = AtomicQuestion | SyncBlock;
@@ -50,12 +51,11 @@ function Flashcard({
   };
   const header = (
     <header className="review-card-header">
-      <span className="review-card-kind">{block ? <Layers size={13} aria-hidden="true" /> : <BookOpen size={13} aria-hidden="true" />}{label}</span>
+      <span className="review-card-kind"><UIIcon name={block ? "sync" : "question"} scale="meta"/>{label}</span>
       <span className="review-card-number">{String(number).padStart(2, "0")}<span> / {String(total).padStart(2, "0")}</span></span>
-      <button className={`review-card-star${card.favorite ? " active" : ""}`} type="button"
-        aria-label={card.favorite ? "取消收藏当前卡片" : "收藏当前卡片"} aria-pressed={Boolean(card.favorite)} onClick={onFavorite}>
-        <Star size={18} fill={card.favorite ? "currentColor" : "none"} aria-hidden="true" />
-      </button>
+      <IconButton icon="favorite" size="compact" className={`review-card-star${card.favorite ? " active" : ""}`}
+        label={card.favorite ? "取消收藏当前卡片" : "收藏当前卡片"} selected={Boolean(card.favorite)}
+        aria-pressed={Boolean(card.favorite)} onClick={onFavorite}/>
     </header>
   );
   const footer = (
@@ -68,9 +68,12 @@ function Flashcard({
       <button type="button" className="review-detail-link" onClick={onOpen}>查看详情 <ArrowRight size={13} aria-hidden="true" /></button>
     </footer>
   );
+  // Recreate each face when it changes roles: WebKit can otherwise reuse a
+  // hidden face's stale text/SVG paint after repeated flips. The flipper stays
+  // mounted, so its rotation and the surrounding carousel remain continuous.
   return (
     <div className={`review-flipper${flipped ? " is-flipped" : ""}`}>
-      <div className="review-card-face review-card-front" inert={preview || flipped} aria-hidden={preview || flipped || undefined}>
+      <div key={`front-${flipped}`} className="review-card-face review-card-front" inert={preview || flipped} aria-hidden={preview || flipped || undefined}>
         {header}
         <div className="review-card-question">
           <span className="review-part-label">问题</span>
@@ -80,11 +83,11 @@ function Flashcard({
           </div>
         </div>
         <button className="review-flip-button" type="button" onClick={onFlip} aria-label="翻转卡片查看答案">
-          <Rotate3D size={17} strokeWidth={1.4} aria-hidden="true" /> 翻转查看答案
+          <UIIcon name="flip"/> 翻转查看答案
         </button>
         {footer}
       </div>
-      <div className="review-card-face review-card-back" inert={preview || !flipped} aria-hidden={preview || !flipped || undefined}>
+      <div key={`back-${flipped}`} className="review-card-face review-card-back" inert={preview || !flipped} aria-hidden={preview || !flipped || undefined}>
         {header}
         <section className="review-card-answer" aria-label="卡片回答">
           <span className="review-part-label">{block ? "聚合回答" : "回答"}</span>
@@ -93,7 +96,7 @@ function Flashcard({
           </div>
         </section>
         <button className="review-flip-button" type="button" onClick={onFlip} aria-label="翻转卡片回到问题">
-          <Rotate3D size={17} strokeWidth={1.4} aria-hidden="true" /> 回到问题
+          <UIIcon name="flip"/> 回到问题
         </button>
         {footer}
       </div>
@@ -114,7 +117,7 @@ export function ReviewCards({
   onFavorite: (source: ReviewSource, id: string, favorite: boolean) => void;
   compact?: boolean;
 }) {
-  const [flipped, setFlipped] = useState(false);
+  const { flipped, setFlipped } = deck;
   const [step, setStep] = useState(0);
   const [offset, setOffset] = useState(0);
   const [turning, setTurning] = useState<Direction | null>(null);
@@ -136,7 +139,6 @@ export function ReviewCards({
   const today = new Intl.DateTimeFormat("zh-CN", { dateStyle: "full" }).format(new Date());
 
   useEffect(() => {
-    setFlipped(false);
     setOffset(0);
     gesture.current = null;
   }, [deck.currentId, deck.source]);
@@ -149,9 +151,10 @@ export function ReviewCards({
     const stack = stage.querySelector(".review-card-stack")!;
     const axis = stage.querySelector(".review-carousel-axis")!.getBoundingClientRect();
     const box = stack.getBoundingClientRect();
-    const radiusX = axis.width / 2;
-    const radiusY = axis.height / 2;
-    const axisX = axis.left + radiusX - box.left - box.width / 2;
+    const region = stage.getBoundingClientRect();
+    const radiusX = Math.min(axis.width / 2, region.width * .34);
+    const radiusY = Math.min(axis.height / 2, region.height * .24);
+    const axisX = axis.left + axis.width / 2 - box.left - box.width / 2;
     const axisY = axis.top - box.top - box.height / 2;
     const animations = Array.from(stack.querySelectorAll<HTMLElement>(".review-card")).map((element) => {
       // Every animated node is already the actual card in its final slot.
@@ -172,10 +175,23 @@ export function ReviewCards({
         const landing = smoothStep((progress - 0.58) / (SHUFFLE_STOP - 0.58));
         const orbitWeight = entering * (1 - landing);
         const blend = (orbit: number, final: number) => final + (orbit - final) * orbitWeight;
+        const orbitAngle = Math.sin(angle) * 16;
+        const scale = .5 + .5 * depth;
+        // Bound the actual blended pose, including the approach and landing,
+        // so every visible card stays inside the stage throughout the shuffle.
+        const poseAngle = blend(orbitAngle, restAngle);
+        const poseScale = blend(scale, restScale);
+        const radians = poseAngle * Math.PI / 180;
+        const halfWidth = (box.width * Math.abs(Math.cos(radians)) + box.height * Math.abs(Math.sin(radians))) * poseScale / 2;
+        const halfHeight = (box.height * Math.abs(Math.cos(radians)) + box.width * Math.abs(Math.sin(radians))) * poseScale / 2;
+        const centerX = box.left + box.width / 2, centerY = box.top + box.height / 2;
+        const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value));
+        const x = clamp(blend(axisX + radiusX * Math.sin(angle), matrix.m41), region.left + halfWidth + 8 - centerX, region.right - halfWidth - 8 - centerX);
+        const y = clamp(blend(axisY + radiusY * (1 - Math.cos(angle)), matrix.m42), region.top + halfHeight + 8 - centerY, region.bottom - halfHeight - 8 - centerY);
         return {
           offset: progress,
           transform: progress >= SHUFFLE_STOP ? restTransform
-            : `translate3d(${blend(axisX + radiusX * Math.sin(angle), matrix.m41)}px, ${blend(axisY + radiusY * (1 - Math.cos(angle)), matrix.m42)}px, 0) rotate(${blend(Math.sin(angle) * 16, restAngle)}deg) scale(${blend(0.5 + 0.5 * depth, restScale)})`,
+            : `translate3d(${x}px, ${y}px, 0) rotate(${poseAngle}deg) scale(${poseScale})`,
           opacity: progress >= SHUFFLE_STOP ? restOpacity
             : blend(0.18 + 0.82 * depth, restOpacity) * entering,
           filter: progress >= SHUFFLE_STOP ? restFilter : `brightness(${blend(0.7 + 0.3 * depth, position === 0 ? 1 : 0.87)}) saturate(${blend(0.5 + 0.5 * depth, position === 0 ? 1 : 0.45)})`,
@@ -337,13 +353,9 @@ export function ReviewCards({
         </p> : null}
         <div className="review-hero-controls">
           <div className="review-source-picker" aria-label="卡片内容">
-            <button type="button" disabled={Boolean(shufflePhase)} aria-pressed={deck.source === "aggregate"} onClick={() => changeSource("aggregate")}><Layers size={14} aria-hidden="true" /> 聚合块</button>
-            <button type="button" disabled={Boolean(shufflePhase)} aria-pressed={deck.source === "question"} onClick={() => changeSource("question")}><BookOpen size={14} aria-hidden="true" /> 原子问答</button>
+            <button type="button" disabled={Boolean(shufflePhase)} aria-pressed={deck.source === "aggregate"} onClick={() => changeSource("aggregate")}><UIIcon name="sync"/> 聚合块</button>
+            <button type="button" disabled={Boolean(shufflePhase)} aria-pressed={deck.source === "question"} onClick={() => changeSource("question")}><UIIcon name="question"/> 原子问答</button>
           </div>
-          {card ? <button className="review-shuffle-button" type="button" aria-label="洗牌"
-            aria-busy={Boolean(shufflePhase)} disabled={Boolean(turning) || Boolean(shufflePhase) || deck.total < 2} onClick={shuffle}>
-            <Shuffle size={14} strokeWidth={1.5} aria-hidden="true" /> 洗牌
-          </button> : null}
         </div>
       </header>
       <div className={`review-stage${shufflePhase ? ` is-shuffling-${shufflePhase}` : ""}`} ref={stageRef} role="group" tabIndex={0}
@@ -424,10 +436,11 @@ export function ReviewCards({
         </> : null}
       </div>
       <footer className="review-hero-footer">
+        {card ? <Button className="review-shuffle-button" variant="quiet" size="prominent" icon="shuffle" aria-label="洗牌"
+          aria-busy={Boolean(shufflePhase)} disabled={Boolean(turning) || Boolean(shufflePhase) || deck.total < 2} onClick={shuffle}>
+          {shufflePhase ? "正在洗牌" : "洗牌"}
+        </Button> : null}
         <span className="review-gesture-hint"><ArrowLeft size={13} aria-hidden="true" /> 左右滑动切换 <ArrowRight size={13} aria-hidden="true" /><i aria-hidden="true" /> 点击翻面查看答案</span>
-        {!compact ? <button type="button" className="review-scroll-cue" onClick={(event) => {
-          event.currentTarget.closest(".overview-page")?.querySelector(".overview-content")?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
-        }}>收藏与近况 <ArrowDown size={13} aria-hidden="true" /></button> : null}
       </footer>
       <span className="review-announcement" role="status" aria-live="polite">{announcement}</span>
     </section>

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useState } from "react";
+import { useWorkbenchState } from "./useWorkbenchState";
 import {
   advanceReviewPile,
   currentReviewId,
@@ -14,11 +15,12 @@ export function useReviewDeck(
   questions: AtomicQuestion[],
   loading: boolean,
 ) {
-  const [source, setSource] = useState<ReviewSource>("aggregate");
-  const [piles, setPiles] = useState<Record<ReviewSource, ReviewPile>>({
+  const [source, setSource] = useWorkbenchState<ReviewSource>("deck-source","aggregate");
+  const [piles, setPiles] = useWorkbenchState<Record<ReviewSource, ReviewPile>>("deck-piles",{
     aggregate: { order: [], cursor: 0 },
     question: { order: [], cursor: 0 },
   });
+  const [faces,setFaces] = useWorkbenchState<Record<string,boolean>>("deck-faces",{});
   // Only membership changes rebuild the piles; editing an answer never reshuffles.
   const aggregateIds = JSON.stringify(syncBlocks.filter((block) => !block.hidden).map((block) => block.id));
   const questionIds = JSON.stringify(questions.map((question) => question.id));
@@ -34,6 +36,8 @@ export function useReviewDeck(
   return {
     source,
     setSource,
+    flipped: faces[`${source}:${currentReviewId(pile)}`] ?? false,
+    setFlipped: (flipped:boolean) => setFaces(f => ({...f,[`${source}:${currentReviewId(pile)}`]:flipped})),
     currentId: currentReviewId(pile),
     idAt: (offset: number) => currentReviewId(pile, offset),
     total: pile.order.length,

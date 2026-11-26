@@ -1,5 +1,11 @@
 # Repository Guidelines
 
+## Product UI contract
+
+Before designing or changing any interface, read `docs/engineering/ui-design-system.md` and `.uicraft.md`. They govern this product's buttons, icons, forms, selection states, focus, responsiveness, and page patterns. Reuse `src/components/UI.tsx`; control tokens and legacy compatibility live in `src/ui-system.css`. Page styles may arrange controls but must not redefine their visual contract. Keep the shared flashcard interaction and shuffle animation. Update the standard and its browser checks together when changing a shared rule.
+
+Product behavior follows `docs/product/resource-product-logic.md`: preserve the original resource-specific capabilities and use the current paper UI to present them. Do not reintroduce the retired universal knowledge editor, generic comparison/relation manager, or continuous organization workflow, including by renaming them. This user-confirmed correction takes precedence over the former 2.1 workbench proposals.
+
 ## Project phase and scope
 
 Interview Atlas is implementing its first local-first vertical slice. Product behavior is defined in `docs/product/product-context.md` and `docs/product/prd-v1.md`; accepted technical choices are recorded in `docs/adr/`.

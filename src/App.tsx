@@ -17,10 +17,7 @@ import {
   Link2,
   LockKeyhole,
   LoaderCircle,
-  Menu,
   MessageSquareText,
-  PanelLeftClose,
-  PanelLeftOpen,
   Pencil,
   Plus,
   Radio,
@@ -41,6 +38,11 @@ import type {
 } from "./ai/types";
 import { AISettingsPanel, InterviewImportPage, extractionProgressLabel } from "./components/AI";
 import { AggregateBlocksPage } from "./components/AggregateBlocks";
+import { WorkbenchHome } from "./components/WorkbenchHome";
+import { IconButton } from "./components/UI";
+import { useWorkbenchState } from "./hooks/useWorkbenchState";
+import type { KnowledgeTarget } from "./domain/workbench";
+import { restoreProductView, type ProductView } from "./domain/productNavigation";
 import { EmptyState, PageHeader } from "./components/PageLayout";
 import { AnswerEditor } from "./components/AnswerEditor";
 import { AnswerOutline } from "./components/AnswerOutline";
@@ -85,17 +87,7 @@ import { useExtractionQueue } from "./hooks/useExtractionQueue";
 import { extractionActive, extractionLabel, sortInterviews } from "./ai/extractionQueue";
 import type { TranscriptionServiceConfig } from "./recording/settings";
 
-type View =
-  | "overview"
-  | "review"
-  | "search"
-  | "create"
-  | "mock"
-  | "interviews"
-  | "questions"
-  | "sync"
-  | "resume"
-  | "settings";
+type View = ProductView;
 
 type Dialog =
   | { kind: "question"; interviewId: string }
@@ -105,35 +97,6 @@ type Dialog =
   | null;
 
 type CreateMode = "choose" | "import" | "record";
-
-const navItems = [
-  { id: "overview" as const, label: "主页", icon: Home },
-  { id: "search" as const, label: "全局搜索", icon: Search },
-  { id: "mock" as const, label: "模拟面试", icon: MessageSquareText },
-  { id: "interviews" as const, label: "面试记录", icon: FileText },
-  { id: "questions" as const, label: "原子问答", icon: CircleHelp },
-  { id: "sync" as const, label: "聚合块", icon: Link2 },
-  { id: "resume" as const, label: "简历经历", icon: FileUser },
-  { id: "settings" as const, label: "设置", icon: Settings },
-];
-
-const knowledgeNavItems = navItems.filter((item) =>
-  ["interviews", "questions", "sync", "resume"].includes(item.id),
-);
-
-const navGroups = [
-  {
-    label: "工作台",
-    items: navItems.filter((item) =>
-      ["overview", "search", "mock"].includes(item.id),
-    ),
-  },
-  { label: "知识库", items: knowledgeNavItems },
-  {
-    label: "系统",
-    items: navItems.filter((item) => item.id === "settings"),
-  },
-];
 
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
@@ -389,7 +352,7 @@ function OverviewPage({
               <button className="overview-mock-room-entry" type="button" onClick={onOpenMockInterviewRoom}>
                 进入面试间 <ArrowUpRight size={17} aria-hidden="true" />
               </button>
-              <button type="button" className="home-interview-history" onClick={() => onNavigate("mock")}>历史模拟</button>
+              <button type="button" className="home-interview-history" onClick={() => onNavigate("practice")}>历史模拟</button>
             </div>
           </section>
           <section className="home-favorites" aria-labelledby="home-favorites-title">
@@ -3075,11 +3038,16 @@ function ClearWorkspaceDialog({
 
 export default function App() {
   const [shareDocument, setShareDocument] = useState<ShareDocument | null>(null);
+  const globalHeaderRef = useRef<HTMLElement>(null);
   const {
     workspace,
     loading,
     error,
     dismissError,
+    saveRelation,
+    createManualQuestion,
+    createKnowledgeQuestion,
+    createKnowledgeBlock,
     createInterview,
     createMockInterview,
     appendMockInterviewMessage,
@@ -3114,6 +3082,21 @@ export default function App() {
     restoreWorkspace,
     exportWorkspace,
   } = useWorkspace();
+  useLayoutEffect(() => {
+    const header = globalHeaderRef.current;
+    const shell = header?.parentElement;
+    if (!header || !shell) return;
+    const updateHeight = () => {
+      shell.style.setProperty(
+        "--workspace-header-height",
+        `${header.getBoundingClientRect().height}px`,
+      );
+    };
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, [loading]);
   const reviewDeck = useReviewDeck(workspace.syncBlocks, workspace.questions, loading);
   const [reviewCardsEnabled, setReviewCardsEnabled] = useState(() => {
     try {
@@ -3128,43 +3111,52 @@ export default function App() {
   const extraction = useExtractionQueue(
     aiClient, aiSettings.config, aiSettings.apiKey, workspace.syncBlocks, saveExtractionTask,
   );
-  const [view, setView] = useState<View>("overview");
-  const [selectedInterviewId, setSelectedInterviewId] = useState<string | null>(
-    null,
-  );
+  const [storedView, setView] = useWorkbenchState<View | "organize" | "knowledge">("view", "overview");
+  const [knowledgeTarget] = useWorkbenchState<KnowledgeTarget | null>("knowledge-target", null);
+  const [practiceTab,setPracticeTab] = useWorkbenchState<"cards" | "mock" | "history">("practice-tab","cards");
+  const view = restoreProductView(storedView, knowledgeTarget, practiceTab);
+  const [returnRoute,setReturnRoute] = useState<View | null>(null);
+  const [selectedInterviewId, setSelectedInterviewId] = useWorkbenchState<string | null>("organize-selected",
+    storedView === "knowledge" && knowledgeTarget?.kind === "interview" ? knowledgeTarget.id : null);
   const [reviewReturnView, setReviewReturnView] = useState<
     "overview" | "interviews"
   >("overview");
-  const [selectedSyncId, setSelectedSyncId] = useState<string | null>(null);
-  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(
-    null,
-  );
-  const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
-  const [selectedMockInterviewId, setSelectedMockInterviewId] = useState<
+  const [selectedSyncId, setSelectedSyncId] = useWorkbenchState<string | null>("sync-selected",
+    storedView === "knowledge" && knowledgeTarget?.kind === "sync" ? knowledgeTarget.id : null);
+  const [selectedQuestionId, setSelectedQuestionId] = useWorkbenchState<string | null>("question-selected",
+    storedView === "knowledge" && knowledgeTarget?.kind === "question" ? knowledgeTarget.id : null);
+  const [selectedResumeId, setSelectedResumeId] = useWorkbenchState<string | null>("resume-selected",
+    storedView === "knowledge" && knowledgeTarget?.kind === "resume" ? knowledgeTarget.id : null);
+  const [selectedMockInterviewId, setSelectedMockInterviewId] = useWorkbenchState<
     string | null
-  >(null);
+  >("mock-selected",null);
   const [mockLobbyView, setMockLobbyView] = useState<"home" | "setup">("home");
+  useEffect(() => {
+    if (storedView === "knowledge" && knowledgeTarget) {
+      if (knowledgeTarget.kind === "interview") setSelectedInterviewId(knowledgeTarget.id);
+      if (knowledgeTarget.kind === "question") setSelectedQuestionId(knowledgeTarget.id);
+      if (knowledgeTarget.kind === "sync") setSelectedSyncId(knowledgeTarget.id);
+      if (knowledgeTarget.kind === "resume") setSelectedResumeId(knowledgeTarget.id);
+    }
+    if (storedView !== view) {
+      setView(view);
+      if (storedView === "practice") setPracticeTab("cards");
+    }
+  }, [storedView, view, knowledgeTarget, setView, setPracticeTab, setSelectedInterviewId, setSelectedQuestionId, setSelectedSyncId, setSelectedResumeId]);
   useLayoutEffect(() => {
-    if (view === "mock" && !selectedMockInterviewId) {
+    if (view === "practice" && practiceTab === "mock" && !selectedMockInterviewId) {
       window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     }
-  }, [view, mockLobbyView, selectedMockInterviewId]);
+  }, [view, practiceTab, mockLobbyView, selectedMockInterviewId]);
   const [questionReturnView, setQuestionReturnView] =
-    useState<View>("questions");
+    useWorkbenchState<View>("question-return","questions");
   const [createMode, setCreateMode] = useState<CreateMode>("choose");
   const [createInitialRaw, setCreateInitialRaw] = useState("");
   const [createInitialSource, setCreateInitialSource] = useState<string | undefined>();
   const [dialog, setDialog] = useState<Dialog>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () =>
-      window.localStorage.getItem("interview-atlas-sidebar-collapsed") ===
-      "true",
-  );
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [mobileKnowledgeMenuOpen, setMobileKnowledgeMenuOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
-  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [globalSearchQuery, setGlobalSearchQuery] = useWorkbenchState("global-search-query", "");
 
   useEffect(() => () => {
     if (toastTimerRef.current !== null) {
@@ -3172,20 +3164,6 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!mobileKnowledgeMenuOpen) return;
-
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileKnowledgeMenuOpen(false);
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [mobileKnowledgeMenuOpen]);
-
-  const favoriteSyncBlocks = useMemo(
-    () => getFavoriteSyncBlocks(workspace),
-    [workspace],
-  );
   const selectedInterview = workspace.interviews.find(
     (item) => item.id === selectedInterviewId,
   );
@@ -3216,22 +3194,22 @@ export default function App() {
     next: View,
     options?: { mockLobbyView?: "home" | "setup" },
   ) => {
+    if(next === "settings") setReturnRoute(view);
+    if(next === "practice") setPracticeTab("cards");
     setView(next);
-    setMockLobbyView(
-      next === "mock" ? options?.mockLobbyView ?? "home" : "home",
-    );
+    if (next === "practice") setMockLobbyView(options?.mockLobbyView ?? "home");
     if (next !== "create") {
       setCreateMode("choose");
       setCreateInitialRaw("");
       setCreateInitialSource(undefined);
     }
-    setSelectedInterviewId(null);
-    setSelectedSyncId(null);
-    setSelectedQuestionId(null);
-    setSelectedResumeId(null);
-    setSelectedMockInterviewId(null);
-    setMobileMenuOpen(false);
-    setMobileKnowledgeMenuOpen(false);
+    if (next !== "settings") {
+      setSelectedInterviewId(null);
+      setSelectedSyncId(null);
+      setSelectedQuestionId(null);
+      setSelectedResumeId(null);
+      setSelectedMockInterviewId(null);
+    }
   };
 
   const openCreate = () => {
@@ -3268,10 +3246,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", openNewPage);
   });
 
-  const openKnowledgeView = (next: View) => {
-    navigate(next);
-  };
-
   const openInterview = (id: string) => {
     setView("interviews");
     setSelectedInterviewId(id);
@@ -3293,8 +3267,6 @@ export default function App() {
     setSelectedSyncId(null);
     setSelectedQuestionId(null);
     setSelectedResumeId(null);
-    setMobileMenuOpen(false);
-    setMobileKnowledgeMenuOpen(false);
   };
 
   const closeAIReview = () => {
@@ -3310,14 +3282,13 @@ export default function App() {
   };
 
   const openMockInterview = (id: string) => {
-    setView("mock");
+    setView("practice");
+    setPracticeTab("mock");
     setSelectedMockInterviewId(id);
     setSelectedInterviewId(null);
     setSelectedQuestionId(null);
     setSelectedSyncId(null);
     setSelectedResumeId(null);
-    setMobileMenuOpen(false);
-    setMobileKnowledgeMenuOpen(false);
   };
 
   const openSync = (id: string) => {
@@ -3328,7 +3299,7 @@ export default function App() {
   };
 
   const openQuestion = (id: string) => {
-    setQuestionReturnView(view);
+    setQuestionReturnView(view === "questions" ? "questions" : view);
     setView("questions");
     setSelectedQuestionId(id);
     setSelectedInterviewId(null);
@@ -3339,6 +3310,12 @@ export default function App() {
     setSelectedResumeId(id);
     setSelectedInterviewId(null);
     setSelectedQuestionId(null);
+  };
+  const openResource = (target: KnowledgeTarget) => {
+    if (target.kind === "interview") openInterview(target.id);
+    else if (target.kind === "question") openQuestion(target.id);
+    else if (target.kind === "sync") openSync(target.id);
+    else openResume(target.id);
   };
 
   const closeQuestion = () => {
@@ -3366,17 +3343,6 @@ export default function App() {
     notify("本地工作区已清空");
   };
 
-  const toggleSidebar = () => {
-    setSidebarCollapsed((current) => {
-      const next = !current;
-      window.localStorage.setItem(
-        "interview-atlas-sidebar-collapsed",
-        String(next),
-      );
-      return next;
-    });
-  };
-
   if (loading) {
     return (
       <div className="loading-screen">
@@ -3388,133 +3354,27 @@ export default function App() {
 
   return (
     <div
-      className={`app-shell${view === "overview" ? " home-shell" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${
+      className={`app-shell workspace-shell${view === "overview" ? " home-shell" : ""}${
         view === "create" && createMode !== "choose"
           ? " create-detail-open"
           : ""
       }`}
     >
-      <aside className={`sidebar ${mobileMenuOpen ? "mobile-open" : ""}`}>
-        <div className="brand" aria-label="见字·如面，Interview Atlas">
-          <BrandMark />
-          <span className="brand-name">
-            <strong>见字·如面</strong>
-            <small>interview atlas</small>
-          </span>
-          <button
-            className="icon-button sidebar-collapse-toggle"
-            type="button"
-            onClick={toggleSidebar}
-            aria-label={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
-            aria-expanded={!sidebarCollapsed}
-            title={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
-          >
-            {sidebarCollapsed ? (
-              <PanelLeftOpen size={18} aria-hidden="true" />
-            ) : (
-              <PanelLeftClose size={18} aria-hidden="true" />
-            )}
-          </button>
-          <button
-            className="icon-button mobile-close"
-            onClick={() => setMobileMenuOpen(false)}
-            title="关闭导航"
-          >
-            <X size={18} />
-          </button>
+      <header className="workspace-global-header" ref={globalHeaderRef}>
+        <button className="workspace-brand" onClick={() => navigate("overview")}><BrandMark/><strong>见字·如面</strong></button>
+        <nav aria-label="一级导航">{([
+          ["overview","首页"],["interviews","面试记录"],["questions","原子问答"],["sync","聚合块"],["resume","简历经历"],["practice","练习"],
+        ] as const).map(([id,label])=><button key={id} aria-current={view===id?"page":undefined}
+          className={view===id?"active":""}
+          onClick={()=>navigate(id)}>{label}</button>)}</nav>
+        <div className="header-actions">
+          <form role="search" className="workspace-global-search" onSubmit={e=>{e.preventDefault();navigate("search");}}>
+            <Search size={16}/><input aria-label="搜索全部内容" placeholder="搜索全部内容" value={globalSearchQuery} onChange={e=>setGlobalSearchQuery(e.target.value)}/><kbd>⌘K</kbd></form>
+          <span className="local-workspace-indicator"><i/>本地工作区</span>
+          <IconButton icon="settings" label="设置" onClick={()=>navigate("settings")}/>
         </div>
-        <button
-          className={`button accent import-button${view === "create" ? " active" : ""}`}
-          onClick={openCreate}
-          aria-label="新建"
-          title={sidebarCollapsed ? "新建" : undefined}
-        >
-          <Plus size={16} aria-hidden="true" />
-          <span>新建</span>
-          <kbd>⌘N</kbd>
-        </button>
-        <nav>
-          {navGroups.map((group) => (
-            <div className="nav-group" key={group.label}>
-              <p>{group.label}</p>
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    className={view === item.id ? "active" : ""}
-                    key={item.id}
-                    onClick={() => navigate(item.id)}
-                    title={sidebarCollapsed ? item.label : undefined}
-                    aria-label={item.label}
-                  >
-                    <Icon size={17} aria-hidden="true" />
-                    <span>{item.label}</span>
-                    {item.id === "mock" ? (
-                      <small>{workspace.mockInterviews.length}</small>
-                    ) : item.id === "interviews" ? (
-                      <small>{workspace.interviews.length}</small>
-                    ) : item.id === "questions" ? (
-                      <small>{workspace.questions.length}</small>
-                    ) : item.id === "sync" ? (
-                      <small>{workspace.syncBlocks.filter((block) => !block.hidden).length}</small>
-                    ) : item.id === "resume" ? (
-                      <small>{workspace.resumeExperiences.length}</small>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </nav>
-        <div className="sidebar-foot">
-          <Database size={15} aria-hidden="true" />
-          <span>
-            <strong>本地工作区</strong>
-            <small>数据未上传</small>
-          </span>
-        </div>
-      </aside>
-
-      {mobileMenuOpen ? (
-        <button
-          className="mobile-nav-backdrop"
-          aria-label="关闭导航"
-          onClick={() => setMobileMenuOpen(false)}
-        />
-      ) : null}
-
+      </header>
       <main className={view === "sync" ? "sync-workspace" : undefined}>
-        <header className="mobile-header">
-          <button
-            className="icon-button"
-            onClick={() => {
-              setMobileKnowledgeMenuOpen(false);
-              setMobileMenuOpen(true);
-            }}
-            title="打开导航"
-          >
-            <Menu size={20} />
-          </button>
-          <span className="mobile-brand" aria-label="见字·如面，Interview Atlas">
-            <BrandMark compact />
-            <span>
-              <strong>见字·如面</strong>
-              <small>interview atlas</small>
-            </span>
-          </span>
-          <button
-            className={`icon-button mobile-search${
-              view === "search" ? " active" : ""
-            }`}
-            type="button"
-            onClick={() => navigate("search")}
-            aria-label="打开全局搜索"
-            title="全局搜索"
-          >
-            <Search size={19} aria-hidden="true" />
-          </button>
-        </header>
-
         {error ? (
           <div className="error-banner" role="alert">
             <span>{error}</span>
@@ -3522,34 +3382,40 @@ export default function App() {
           </div>
         ) : null}
 
-        {view === "overview" ? (
-          <OverviewPage
-            deck={reviewDeck}
-            reviewCardsEnabled={reviewCardsEnabled}
-            questions={workspace.questions}
-            interviews={workspace.interviews}
-            aiReviews={workspace.aiReviews}
-            syncBlocks={workspace.syncBlocks}
-            favoriteSyncBlocks={favoriteSyncBlocks}
-            onNavigate={navigate}
+        {view==="settings"&&returnRoute ? <button className="back-button workspace-return" onClick={()=>{setView(returnRoute);setReturnRoute(null);}}><ArrowLeft size={15}/>返回上次操作</button> : null}
+        {view==="practice" ? <div className="practice-workspace"><header className="workbench-heading"><h1>练习</h1>
+          <nav className="workspace-tabs" aria-label="练习方式">{([["cards","闪卡复习"],["mock","模拟面试"],["history","历史复盘"]] as const).map(([id,label])=><button
+            className={practiceTab===id?"active":""} key={id} onClick={()=>{setPracticeTab(id);setSelectedMockInterviewId(null);}}>{label}</button>)}</nav></header>
+          {practiceTab==="cards"?<div className="practice-cards"><ReviewCards deck={reviewDeck} syncBlocks={workspace.syncBlocks} questions={workspace.questions}
+            onOpenSync={openSync} onOpenQuestion={openQuestion} onCreateSync={()=>setDialog({kind:"sync"})} onCreateQuestion={()=>setDialog({kind:"standalone-question"})}
+            onFavorite={(source,id,favorite)=>source==="aggregate"?updateSyncBlock(id,{favorite}):setQuestionFavorite(id,favorite)}/></div>:null}
+          {practiceTab==="mock"||practiceTab==="history" ? <MockInterviewPage
+            workspace={workspace}
+            focusedId={selectedMockInterviewId}
+            initialLobbyView={practiceTab==="history"?"history":"setup"}
+            configured={aiSettings.configured}
+            config={aiSettings.config}
+            apiKey={aiSettings.apiKey}
+            client={aiClient}
+            onFocus={setSelectedMockInterviewId}
+            onCreate={createMockInterview}
+            onAppendMessage={appendMockInterviewMessage}
+            onUpdateHarness={updateMockInterviewHarness}
+            onEnd={endMockInterview}
+            onApplyAnalysis={applyMockInterviewAnalysis}
+            onOpenSettings={() => navigate("settings")}
             onOpenInterview={openInterview}
-            onOpenQuestion={openQuestion}
-            onOpenSync={openSync}
-            onCreateInterview={openCreate}
-            onOpenMockInterviewRoom={() =>
-              navigate("mock", { mockLobbyView: "setup" })
-            }
-            onOpenAIReview={openAIReview}
-            onCreateSync={() => setDialog({ kind: "sync" })}
-            onCreateQuestion={() => setDialog({ kind: "standalone-question" })}
-            onFavorite={(source, id, favorite) => {
-              if (source === "aggregate") updateSyncBlock(id, { favorite });
-              else setQuestionFavorite(id, favorite);
-            }}
-            onSearch={(query) => { setGlobalSearchQuery(query); navigate("search"); }}
+          /> : null}
+        </div>:null}
+        {view === "overview" ? (
+          <WorkbenchHome
+            workspace={workspace} deck={reviewDeck} enabled={reviewCardsEnabled}
+            onOrganize={openAIReview} onMock={id=>{if(id)openMockInterview(id);else { setView("practice"); setPracticeTab("mock"); setMockLobbyView("setup"); }}}
+            onImport={()=>openImport()} onInterviews={()=>navigate("interviews")} onPractice={()=>navigate("practice")}
+            onOpen={openResource} onFavorite={(source,id,favorite)=>source==="aggregate"?updateSyncBlock(id,{favorite}):setQuestionFavorite(id,favorite)}
+            onCreateSync={()=>setDialog({kind:"sync"})} onCreateQuestion={()=>setDialog({kind:"standalone-question"})}
           />
         ) : null}
-
         {view === "review" && selectedInterview ? (
           <AIReviewPage
             key={selectedInterview.id}
@@ -3663,26 +3529,6 @@ export default function App() {
             onUseTranscript={(transcript) =>
               openImport(transcript, "讯飞双端录音")
             }
-          />
-        ) : null}
-
-        {view === "mock" ? (
-          <MockInterviewPage
-            workspace={workspace}
-            focusedId={selectedMockInterviewId}
-            initialLobbyView={mockLobbyView}
-            configured={aiSettings.configured}
-            config={aiSettings.config}
-            apiKey={aiSettings.apiKey}
-            client={aiClient}
-            onFocus={setSelectedMockInterviewId}
-            onCreate={createMockInterview}
-            onAppendMessage={appendMockInterviewMessage}
-            onUpdateHarness={updateMockInterviewHarness}
-            onEnd={endMockInterview}
-            onApplyAnalysis={applyMockInterviewAnalysis}
-            onOpenSettings={() => navigate("settings")}
-            onOpenInterview={openInterview}
           />
         ) : null}
 
@@ -3888,105 +3734,6 @@ export default function App() {
         ) : null}
       </main>
 
-      {mobileKnowledgeMenuOpen ? (
-        <button
-          className="mobile-bottom-nav-backdrop"
-          type="button"
-          aria-label="关闭知识库菜单"
-          onClick={() => setMobileKnowledgeMenuOpen(false)}
-        />
-      ) : null}
-
-      <nav
-        className={`bottom-nav${mobileKnowledgeMenuOpen ? " menu-open" : ""}${
-          mobileMenuOpen || (view === "create" && createMode !== "choose")
-            ? " nav-hidden"
-            : ""
-        }`}
-        aria-label="移动端主导航"
-      >
-        <button
-          className={`bottom-overview ${view === "overview" ? "active" : ""}`}
-          onClick={() => navigate("overview")}
-          aria-current={view === "overview" ? "page" : undefined}
-        >
-          <Home size={19} aria-hidden="true" />
-          <span>主页</span>
-        </button>
-        <button
-          className={`bottom-mock ${view === "mock" ? "active" : ""}`}
-          onClick={() => navigate("mock")}
-          aria-current={view === "mock" ? "page" : undefined}
-        >
-          <MessageSquareText size={19} aria-hidden="true" />
-          <span>模拟</span>
-        </button>
-        <button
-          className={`bottom-create${view === "create" ? " active" : ""}`}
-          onClick={openCreate}
-          aria-label="新建"
-          title="新建"
-        >
-          <span className="bottom-create-icon">
-            <Plus size={23} aria-hidden="true" />
-          </span>
-          <span className="bottom-create-label">新建</span>
-        </button>
-        <div className="bottom-knowledge">
-          <button
-            className={`bottom-knowledge-toggle ${
-              ["interviews", "questions", "sync", "resume"].includes(view)
-                ? "active"
-                : ""
-            }`}
-            onClick={() =>
-              setMobileKnowledgeMenuOpen((current) => !current)
-            }
-            aria-expanded={mobileKnowledgeMenuOpen}
-            aria-haspopup="menu"
-            aria-controls="mobile-knowledge-tabs"
-          >
-            <BookOpen size={19} aria-hidden="true" />
-            <span>知识库</span>
-          </button>
-          {mobileKnowledgeMenuOpen ? (
-            <div
-              className="bottom-knowledge-panel"
-              id="mobile-knowledge-tabs"
-              aria-label="知识库分类"
-              role="menu"
-            >
-              {knowledgeNavItems.map((item) => {
-                const Icon = item.icon;
-                const shortLabel =
-                  item.id === "interviews"
-                    ? "面试"
-                    : item.id === "questions"
-                      ? "问答"
-                      : item.id === "sync"
-                        ? "聚合块"
-                        : "简历";
-
-                return (
-                  <button
-                    className={view === item.id ? "active" : ""}
-                    key={item.id}
-                    onClick={() => openKnowledgeView(item.id)}
-                    aria-label={item.label}
-                    aria-current={view === item.id ? "page" : undefined}
-                    title={item.label}
-                    role="menuitem"
-                  >
-                    <Icon size={16} aria-hidden="true" />
-                    <span>{shortLabel}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
-      </nav>
-
       {shareDocument ? (
         <ShareModal document={shareDocument} onClose={() => setShareDocument(null)} />
       ) : null}
@@ -3999,8 +3746,8 @@ export default function App() {
         >
           <QuestionForm
             onCancel={() => setDialog(null)}
-            onSubmit={(input) => {
-              createQuestion(dialog.interviewId, input);
+            onSubmit={async (input) => {
+              await createManualQuestion(dialog.interviewId, input);
               setDialog(null);
               notify("原子问答已加入当前面试");
             }}
@@ -4016,8 +3763,8 @@ export default function App() {
         >
           <QuestionForm
             onCancel={() => setDialog(null)}
-            onSubmit={(input) => {
-              const question = createStandaloneQuestion(input);
+            onSubmit={async (input) => {
+              const question = await createKnowledgeQuestion(input);
               setDialog(null);
               openQuestion(question.id);
               notify("原子问答已保存到本地");
@@ -4043,15 +3790,15 @@ export default function App() {
             syncBlocks={workspace.syncBlocks}
             initialQuestionId={dialog.questionId}
             onCancel={() => setDialog(null)}
-            onLinkExisting={(syncBlockId) => {
+            onLinkExisting={async (syncBlockId) => {
               if (!dialog.questionId) return;
-              linkQuestionToSyncBlock(dialog.questionId, syncBlockId);
+              await saveRelation(dialog.questionId, syncBlockId);
               setDialog(null);
               openSync(syncBlockId);
               notify("原子问答已关联到聚合块");
             }}
-            onSubmit={(input) => {
-              const syncBlock = createSyncBlock(input);
+            onSubmit={async (input) => {
+              const syncBlock = await createKnowledgeBlock(input);
               setDialog(null);
               openSync(syncBlock.id);
               notify("聚合块已保存并建立引用");
@@ -4097,7 +3844,7 @@ export default function App() {
         </div>
       ) : null}
 
-      {!hasData && view !== "settings" && view !== "mock" ? (
+      {!hasData && view !== "settings" ? (
         <button
           className="demo-shortcut"
           onClick={() => {

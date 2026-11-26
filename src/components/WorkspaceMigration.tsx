@@ -131,7 +131,6 @@ export function WorkspaceMigration({
           onChange={readFile}
         />
         <button className="button secondary" type="button" onClick={chooseFile}>
-          <Download size={16} aria-hidden="true" />
           选择备份
         </button>
       </section>

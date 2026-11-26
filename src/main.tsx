@@ -10,6 +10,8 @@ import "@fontsource/source-serif-4/latin-500.css";
 import App from "./App";
 import "./styles.css";
 import "./theme.css";
+import "./workbench.css";
+import "./ui-system.css";
 
 const root = document.getElementById("root");
 

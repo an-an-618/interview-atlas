@@ -35,11 +35,11 @@ await context.route("https://ai-check.invalid/**", async (route) => {
 const base = process.env.APP_URL ?? "http://127.0.0.1:43225";
 const wait = (fn) => page.waitForFunction(fn);
 async function nav(name) {
-  await page.locator(".sidebar").getByRole("button", { name, exact: false }).click();
+  await page.getByRole("navigation",{name:"一级导航"}).getByRole("button", { name:name==="主页"?"首页":name, exact: true }).click();
 }
 async function start(company) {
-  await page.locator(".sidebar").getByRole("button", { name: "新建", exact: true }).click();
-  await page.getByRole("button", { name: /导入面经/ }).click();
+  await nav("首页");
+  await page.getByRole("button", { name: "导入面经",exact:true }).click();
   await page.getByLabel("面试原文", { exact: true }).fill(`${company} · 前端一面 · 2020-01-01\n1. 如何优化性能？\n答：先测量关键指标。`);
   await page.getByRole("button", { name: /AI 提取/ }).click();
   await page.getByRole("heading", { name: "AI 正在为你拆解…" }).waitFor();
@@ -58,7 +58,7 @@ async function stored() {
 }
 try {
   await page.goto(base);
-  await page.locator(".overview-page").waitFor();
+  await page.locator(".workspace-global-header").waitFor();
   await page.evaluate(async () => {
     const { indexedDbRepository: repo } = await import("/src/data/repository.ts");
     await repo.setPreference("ai.provider.config", {
@@ -67,11 +67,11 @@ try {
     sessionStorage.setItem("interview-atlas.ai.provider-keys", JSON.stringify({ custom: "synthetic-test-key" }));
   });
   await page.reload();
-  await page.locator(".overview-page").waitFor();
+  await page.locator(".workspace-global-header").waitFor();
   await start("异步验证甲");
   await page.getByRole("button", { name: "在后台继续", exact: true }).click();
   await nav("主页");
-  assert.match(await page.locator(".pending-review-panel").innerText(), /异步验证甲[\s\S]*AI 处理中/);
+  assert.match(await page.locator(".home-followups").innerText(), /异步验证甲[\s\S]*正在提取/);
   await start("异步验证乙");
   await page.getByRole("heading", { name: "排队中", exact: true }).waitFor();
   await page.getByRole("button", { name: "在后台继续", exact: true }).click();
@@ -79,13 +79,13 @@ try {
   assert.match(await page.locator(".interview-row").first().innerText(), /异步验证乙[\s\S]*排队中/);
   assert.equal(pending.length, 1, "only one provider request before completion");
   await nav("主页");
-  await page.locator(".pending-review-preview").getByRole("button", { name: /异步验证甲/ }).click();
+  await page.locator(".home-followups button").filter({hasText:"异步验证甲"}).first().click();
   await page.locator(".ai-review-page").waitFor();
   assert.match(await page.locator(".ai-review-page-state").innerText(), /正在拆解面经/);
   await page.locator(".ai-review-page-toolbar").getByRole("button", { name: "返回", exact: true }).click();
   await reply(0);
   await page.locator(".extraction-notification").filter({ hasText: "异步验证甲" }).waitFor();
-  await wait(() => document.querySelector(".pending-review-panel")?.textContent.includes("AI 处理中"));
+  await wait(() => document.querySelector(".home-followups")?.textContent.includes("正在提取"));
   await page.waitForFunction(async () => {
     const { indexedDbRepository: repo } = await import("/src/data/repository.ts");
     const workspace = await repo.load();
@@ -112,11 +112,15 @@ try {
   await page.locator(".extraction-notification").filter({ hasText: "异步验证乙" }).getByRole("button", { name: "查看并审核" }).click();
   await page.locator(".ai-review-page").waitFor();
   await page.locator(".ai-review-page").getByRole("button", { name: "采纳为原子问答" }).click();
+  await page.waitForFunction(async () => {
+    const repository = (await import("/src/data/repository.ts")).indexedDbRepository;
+    return (await repository.load()).questions.filter(item => item.title === "如何优化性能？").length === 2;
+  });
   workspace = await stored();
   assert.equal(workspace.questions.filter((item) => item.title === "如何优化性能？").length, 2);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.reload();
-  await page.locator(".overview-page").waitFor();
+  await page.locator(".workspace-global-header").waitFor();
   assert.equal(await page.locator(".extraction-notification").count(), 0, "read notifications stay dismissed");
   await start("刷新中断验证");
   await page.getByRole("button", { name: "在后台继续" }).click();
@@ -125,8 +129,9 @@ try {
     return (await repo.load()).interviews.some((item) => item.company === "刷新中断验证" && item.extractionTask.status === "running");
   });
   await page.reload();
-  await page.locator(".overview-page").waitFor();
-  assert.match(await page.locator(".pending-review-panel").innerText(), /处理已中断/);
+  await page.locator(".workspace-global-header").waitFor();
+  await nav("首页");
+  assert.match(await page.locator(".home-followups").innerText(), /提取未完成 · 可重试/);
   assert.deepEqual(errors, []);
   console.log("PASS: background close / FIFO / overview / list ordering / persistence / concurrent edit / notifications / desktop & mobile acceptance / reload interruption");
 } finally {

@@ -32,6 +32,7 @@ import {
 import { MockInterviewRuntime, type MockInterviewRuntimeOptions } from "../ai/mockInterviewRuntime";
 import { normalizeMockCompany } from "../ai/mockInterviewContext";
 import { getMockInterviewProgress } from "../domain/mockInterviewHarness";
+import { useWorkbenchState } from "../hooks/useWorkbenchState";
 import type { MockInterviewHarness, MockInterviewMessage } from "../domain/types";
 import mockInterviewScene from "../assets/mock-interview-scene.png";
 import mockInterviewer from "../assets/mock-interviewer.png";
@@ -51,7 +52,7 @@ import type {
 interface MockInterviewPageProps {
   workspace: Workspace;
   focusedId: string | null;
-  initialLobbyView?: "home" | "setup";
+  initialLobbyView?: "home" | "setup" | "history";
   configured: boolean;
   config: AIProviderConfig;
   apiKey: string;
@@ -108,20 +109,20 @@ function MockInterviewLobby({
 }: {
   workspace: Workspace;
   sessions: MockInterviewSession[];
-  initialView: "home" | "setup";
+  initialView: "home" | "setup" | "history";
   configured: boolean;
   config: AIProviderConfig;
   onStart: (input: CreateMockInterviewInput) => Promise<void>;
   onFocus: (id: string) => void;
   onOpenSettings: () => void;
 }) {
-  const [company, setCompany] = useState("");
-  const [role, setRole] = useState("");
-  const [round, setRound] = useState("");
-  const [jobDescription, setJobDescription] = useState("");
-  const [additionalInfo, setAdditionalInfo] = useState("");
-  const [targetQuestionCount, setTargetQuestionCount] = useState(8);
-  const [interviewerPrompt, setInterviewerPrompt] = useState(
+  const [company, setCompany] = useWorkbenchState("mock-company", "");
+  const [role, setRole] = useWorkbenchState("mock-role", "");
+  const [round, setRound] = useWorkbenchState("mock-round", "");
+  const [jobDescription, setJobDescription] = useWorkbenchState("mock-jd", "");
+  const [additionalInfo, setAdditionalInfo] = useWorkbenchState("mock-additional", "");
+  const [targetQuestionCount, setTargetQuestionCount] = useWorkbenchState("mock-count", 8);
+  const [interviewerPrompt, setInterviewerPrompt] = useWorkbenchState("mock-strategy",
     DEFAULT_MOCK_INTERVIEWER_PROMPT,
   );
   const [lobbyView, setLobbyView] = useState<"home" | "setup" | "history">(
@@ -743,10 +744,12 @@ function FeedbackColumn({
   title,
   items,
   tone,
+  session,
 }: {
   title: string;
   items: MockInterviewFeedback["strengths"];
   tone: "positive" | "attention";
+  session: MockInterviewSession;
 }) {
   return (
     <section className={`mock-feedback-column ${tone}`}>
@@ -756,6 +759,8 @@ function FeedbackColumn({
           <article key={`${item.title}-${item.detail}`}>
             <strong>{item.title}</strong>
             <p>{item.detail}</p>
+            {item.evidenceRefs?.filter(ref => session.messages.some(m => m.id === ref.messageId && m.content.includes(ref.quote)))
+              .map((ref,index) => <blockquote key={index}>{ref.quote}</blockquote>)}
           </article>
         ))
       ) : (
@@ -851,11 +856,13 @@ function MockInterviewReport({
               title="有效表现"
               items={feedback.strengths}
               tone="positive"
+              session={session}
             />
             <FeedbackColumn
               title="需要改进"
               items={feedback.improvements}
               tone="attention"
+              session={session}
             />
           </div>
 
@@ -892,6 +899,8 @@ function MockInterviewReport({
                     {review.evidence ? (
                       <blockquote>{review.evidence}</blockquote>
                     ) : null}
+                    {review.evidenceRefs?.filter(ref => session.messages.some(m => m.id === ref.messageId && m.content.includes(ref.quote)))
+                      .map((ref,index) => <blockquote key={index}>{ref.quote}</blockquote>)}
                     {review.suggestion ? (
                       <p>
                         <strong>改进方向</strong>
@@ -926,7 +935,7 @@ function MockInterviewReport({
             onClick={() => onOpenInterview(session.interviewId!)}
           >
             <FileText size={15} aria-hidden="true" />
-            查看知识库面试记录
+            查看面试记录
           </button>
         ) : null}
         <button className="button quiet" type="button" onClick={onBack}>
@@ -965,6 +974,10 @@ export function MockInterviewPage({
   const sessions = [...workspace.mockInterviews].sort((left, right) =>
     right.startedAt.localeCompare(left.startedAt),
   );
+  const [, setLastTask] = useWorkbenchState<{ key: string; at: string } | null>("last-task", null);
+  useEffect(() => {
+    if (session?.status === "active") setLastTask({ key: `mock:${session.id}`, at: session.updatedAt });
+  }, [session?.id, session?.status, session?.updatedAt]);
 
   runtimeOptionsRef.current = {
     client, config, apiKey, workspace, create: onCreate, append: onAppendMessage,

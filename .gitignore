@@ -21,6 +21,8 @@ secrets/
 # Dependencies and build output
 node_modules/
 dist/
+Interview-Atlas_*_web.zip
+SHA256SUMS-web.txt
 build/
 coverage/
 *.tsbuildinfo

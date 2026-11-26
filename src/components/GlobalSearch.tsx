@@ -7,7 +7,8 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useWorkbenchState } from "../hooks/useWorkbenchState";
 import {
   searchWorkspace,
   type GlobalSearchResult,
@@ -110,7 +111,7 @@ export function GlobalSearchPage({
   onOpenResume,
   onOpenAssetPage,
 }: GlobalSearchPageProps) {
-  const [scope, setScope] = useState<SearchScope>("all");
+  const [scope, setScope] = useWorkbenchState<SearchScope>("global-search-scope", "all");
   const inputRef = useRef<HTMLInputElement>(null);
   const allResults = useMemo(
     () => searchWorkspace(workspace, query),
@@ -143,7 +144,14 @@ export function GlobalSearchPage({
   const normalizedQuery = query.trim();
 
   useEffect(() => {
-    inputRef.current?.focus();
+    inputRef.current?.focus({ preventScroll: true });
+  }, []);
+  useLayoutEffect(() => {
+    const top = Number(sessionStorage.getItem("atlas-2.1:global-search-scroll") ?? 0);
+    window.scrollTo({ top, behavior: "instant" });
+    const remember = () => sessionStorage.setItem("atlas-2.1:global-search-scroll", String(window.scrollY));
+    window.addEventListener("scroll", remember);
+    return () => window.removeEventListener("scroll", remember);
   }, []);
 
   const openResult = (result: GlobalSearchResult) => {

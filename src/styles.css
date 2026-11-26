@@ -390,8 +390,8 @@ summary {
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid rgba(215, 111, 75, 0.28);
-  outline-offset: 2px;
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 3px;
 }
 
 button:disabled {
@@ -11673,13 +11673,14 @@ html:has(.overview-page) {
   box-shadow: none;
   overflow: visible;
   opacity: 1;
+  transform-style: preserve-3d;
   transform: translate3d(calc(var(--slot-x) + var(--drag-x, 0px)), var(--slot-y), 0) rotate(var(--slot-angle)) scale(var(--slot-scale));
   transition: transform 420ms cubic-bezier(0.22, 0.75, 0.25, 1), opacity 420ms ease, filter 420ms ease;
 }
 
 .review-card[data-position="0"] {
   z-index: 3;
-  filter: brightness(1);
+  filter: none;
 }
 
 .review-card[data-position="-1"],
@@ -11743,11 +11744,13 @@ html:has(.overview-page) {
 }
 
 .review-flipper {
+  --review-flip-duration: 560ms;
   position: relative;
   width: 100%;
   height: 100%;
+  transform: rotateY(0deg);
   transform-style: preserve-3d;
-  transition: transform 560ms cubic-bezier(0.3, 0.7, 0.2, 1);
+  transition: transform var(--review-flip-duration) cubic-bezier(0.3, 0.7, 0.2, 1);
 }
 
 .review-flipper.is-flipped {
@@ -11766,17 +11769,41 @@ html:has(.overview-page) {
   background: var(--surface);
   box-shadow: 0 22px 48px -23px #40331e45, 0 2px 5px #40331e0b;
   overflow: hidden;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
+  backface-visibility: visible;
+  -webkit-backface-visibility: visible;
+  /* Swap visible faces at the flip midpoint. Explicit inherited visibility
+     also invalidates WebKit text/SVG paint after module navigation. */
+  transition: visibility 0s linear calc(var(--review-flip-duration) / 2);
+}
+
+.review-card-face * {
+  visibility: inherit;
 }
 
 .review-card-front {
+  visibility: visible;
+  transform: rotateY(0deg);
   background: linear-gradient(135deg, #fffefa, #fdfaf2);
 }
 
 .review-card-back {
+  visibility: hidden;
   background: #f9f6ed;
   transform: rotateY(180deg);
+}
+
+.review-flipper.is-flipped .review-card-front {
+  visibility: hidden;
+}
+
+.review-flipper.is-flipped .review-card-back {
+  visibility: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .review-card-face {
+    transition: none;
+  }
 }
 
 .review-card-header {

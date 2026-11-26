@@ -1,5 +1,5 @@
 import { Check, Link2, Plus, Search } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { AnswerEditor } from "./AnswerEditor";
 import type {
   AtomicQuestion,
@@ -12,7 +12,7 @@ import type {
 
 interface QuestionFormProps {
   initialValue?: CreateQuestionInput;
-  onSubmit: (input: CreateQuestionInput) => void;
+  onSubmit: (input: CreateQuestionInput) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -21,16 +21,22 @@ export function QuestionForm({ initialValue, onSubmit, onCancel }: QuestionFormP
   const [answer, setAnswer] = useState(initialValue?.answer ?? "");
   const [notes, setNotes] = useState(initialValue?.notes ?? "");
   const [tags, setTags] = useState(initialValue?.tags.join("，") ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const lock = useRef(false);
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!title.trim()) return;
-    onSubmit({
+    if (!title.trim() || lock.current) return;
+    lock.current = true; setBusy(true); setError("");
+    try { await onSubmit({
       title,
       answer,
       notes,
       tags: [...new Set(tags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))],
-    });
+    }); } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "保存失败，内容已保留，请重试。");
+    } finally { lock.current = false; setBusy(false); }
   };
 
   return (
@@ -68,11 +74,12 @@ export function QuestionForm({ initialValue, onSubmit, onCancel }: QuestionFormP
         <span>标签</span>
         <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="多个标签用逗号分隔" />
       </label>
+      {error ? <p role="alert" className="form-error">{error} 内容已保留。</p> : null}
       <footer className="form-actions">
         <button className="button quiet" type="button" onClick={onCancel}>
           取消
         </button>
-        <button className="button primary" type="submit">
+        <button className="button primary" type="submit" disabled={busy}>
           {initialValue ? <Check size={15} aria-hidden="true" /> : <Plus size={15} aria-hidden="true" />}
           {initialValue ? "保存原子问答" : "添加原子问答"}
         </button>
@@ -125,8 +132,8 @@ interface SyncBlockFormProps {
   resumeExperiences: ResumeExperience[];
   syncBlocks: SyncBlock[];
   initialQuestionId?: string;
-  onSubmit: (input: CreateSyncBlockInput) => void;
-  onLinkExisting?: (syncBlockId: string) => void;
+  onSubmit: (input: CreateSyncBlockInput) => void | Promise<void>;
+  onLinkExisting?: (syncBlockId: string) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -149,6 +156,9 @@ export function SyncBlockForm({
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [reviewNotes, setReviewNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const lock = useRef(false);
   const [selected, setSelected] = useState<string[]>(
     initialQuestionId ? [initialQuestionId] : [],
   );
@@ -197,21 +207,28 @@ export function SyncBlockForm({
     );
   };
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (lock.current) return;
+    if (mode === "existing" ? !selectedSyncBlockId || !onLinkExisting : !title.trim() || !body.trim()) return;
+    lock.current = true; setBusy(true); setError("");
+    try {
     if (mode === "existing") {
       if (!selectedSyncBlockId || !onLinkExisting) return;
-      onLinkExisting(selectedSyncBlockId);
+      await onLinkExisting(selectedSyncBlockId);
       return;
     }
     if (!title.trim() || !body.trim()) return;
-    onSubmit({
+    await onSubmit({
       title,
       body,
       reviewNotes,
       questionIds: selected,
       resumeExperienceIds: selectedResumeExperienceIds,
     });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "保存失败，内容已保留，请重试。");
+    } finally { lock.current = false; setBusy(false); }
   };
 
   return (
@@ -402,6 +419,7 @@ export function SyncBlockForm({
           </div>
         )}
       </div>
+      {error ? <p role="alert" className="form-error">{error} 内容已保留。</p> : null}
       <footer className="form-actions">
         <button className="button quiet" type="button" onClick={onCancel}>
           取消
@@ -409,7 +427,7 @@ export function SyncBlockForm({
         <button
           className="button primary"
           type="submit"
-          disabled={mode === "existing" && !selectedSyncBlockId}
+          disabled={busy || mode === "existing" && !selectedSyncBlockId}
         >
           <Link2 size={15} aria-hidden="true" />
           {mode === "existing" ? "确认关联" : "保存聚合块"}

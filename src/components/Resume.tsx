@@ -487,18 +487,6 @@ function ResumeCard({
                     <Pencil size={13} aria-hidden="true" />
                     基本信息
                   </button>
-                  <button
-                    className="button secondary"
-                    type="button"
-                    onClick={() =>
-                      setBulletText((current) =>
-                        current ? `${current}\n` : "",
-                      )
-                    }
-                  >
-                    <Plus size={13} aria-hidden="true" />
-                    新增要点
-                  </button>
                 </div>
               </div>
 
@@ -556,7 +544,7 @@ function ResumeCard({
                   type="button"
                   onClick={() => setShowRelations((current) => !current)}
                 >
-                  管理关联
+                  选择问答与聚合块
                 </button>
               </div>
               <div className="resume-relation-list">
@@ -836,9 +824,7 @@ export function ResumePage({
       <header className="page-header">
         <div>
           <p className="eyebrow">简历经历 · Resume</p>
-          <h1>
-            举一反三，<em>不离其宗</em>
-          </h1>
+          <h1>简历经历</h1>
           <p className="page-description">
             用真实经历支撑面试回答，并保持每条关联可追溯。
           </p>

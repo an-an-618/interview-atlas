@@ -1,43 +1,19 @@
 # 全站配色与交互
 
-主页、搜索、模拟面试、面试记录、原子问答、聚合块、简历经历、设置，以及新建、导入和弹窗使用同一组配色。
+完整且优先的规范见 [UI 设计规范](ui-design-system.md)。颜色、尺寸、圆角、图标语义、表单、选择态、焦点和响应式均按该规范执行。
 
-## 颜色分工
+- 主操作深绿、选中浅绿，删除与错误保留红色，收藏保留金色。
+- 普通按钮 40px、紧凑操作 32px、突出操作 44px；动作圆角 8px，图标线宽 1.75。
+- 手机及粗指针控件提升到 44px。列表、开关及导航使用自己的结构。
+- 搜索保留单下划线；普通字段只在聚焦时显线，键盘按钮使用 2px 轮廓。相邻列表与详情取消成对外框，列表行和工具区用留白分组。
+- 闪卡布局、翻面、滑动与洗牌保留；场景中的操作控件仍遵守公共规则。
 
-| 用途 | CSS 变量 | 颜色 |
-| --- | --- | --- |
-| 页面纸色 | `--paper` | `#f8f5f0` |
-| 卡片、表单底色 | `--surface` | `#fffcf7` |
-| 边线 | `--line` | `#e3ded5` |
-| 主操作 | `--primary` | `#254438` |
-| 主操作悬停 | `--primary-hover` | `#345747` |
-| 主操作按下 | `--primary-pressed` | `#19352a` |
-| 导航、筛选选中底色 | `--primary-soft` | `#e5e8dd` |
-| 标题、装饰点缀 | `--accent` | `#b84928` |
-
-删除与错误继续使用红色，收藏使用金色，成功与警告使用各自的语义色。服务商图标保留品牌颜色。
-
-## 组件约定
-
-- `.button.primary` 和 `.button.accent` 均表示主操作，统一使用深绿；次要操作使用纸色和细边框。
-- 悬停改变颜色，按下保留已有的轻微缩放反馈；禁用按钮不进入悬停或按下状态。
-- 键盘聚焦使用绿色外环；表单输入框和回答编辑器使用同色边线和光环。主页顶栏搜索采用细下划线，聚焦只改变线条与图标颜色，内部输入框不重复绘制焦点环。隐藏的原生选择框把焦点环传递给可见标记。
-- 侧栏、筛选、页签、设置开关、复选框和单选框共享绿色交互色。手机顶部、底部和知识库菜单遵循相同约定。
-- 侧栏的品牌、新建、分组间距与收起规则由 `.app-shell` 共享；`.home-shell` 仅负责主页布局。
-- 闪卡的翻转、滑动、轮盘、洗牌，以及长内容滚动保持各自的场景样式。
-
-变量定义在 `src/styles.css` 的 `:root`，组件状态收敛在 `src/theme.css`，入口按此顺序导入。新增公共颜色应使用变量，避免通过页面根节点重新覆盖主题。
-
-## 验证
+入口加载顺序为 `styles.css` → `theme.css` → `workbench.css` → `ui-system.css`。最后一层提供公共控件契约，禁止页面样式另设控件外观。新控件使用 `Button`、`IconButton`、`UIIcon`。
 
 ```bash
 npm run build
 npm test
-node scripts/check-theme-consistency.mjs
-node scripts/check-home-workbench.mjs
-node scripts/check-review-cards.mjs
+PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node scripts/check-ui-system.mjs
 ```
 
-浏览器脚本需要可用的 Playwright 模块与 Chrome，可通过 `PLAYWRIGHT_MODULE`、`CHROME_PATH` 指定路径，通过 `APP_URL` 指定预览地址，通过 `SCREENSHOT_DIR` 保存截图。
-
-主题脚本覆盖八个入口页、面试配置、新建与导入、搜索结果、问答弹窗、筛选、开关、按钮悬停/按下/聚焦、收起侧栏、390px/320px 手机宽度，以及 Chrome 原生 75%/100%/125%/150%/200% 缩放。测试使用独立浏览器上下文和示例数据，不修改日常工作区数据。
+产品逻辑沿用 2.0 独立资源模块，当前信笺界面仅承载已有能力。见 [产品逻辑](../product/resource-product-logic.md)。脚本使用独立浏览器与示例数据，支持 `APP_URL`、`PLAYWRIGHT_MODULE`、`CHROME_PATH`、`SCREENSHOT_DIR`，覆盖六个一级入口、详情、桌面/手机以及原生 Chrome 缩放。

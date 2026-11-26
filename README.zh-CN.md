@@ -12,10 +12,12 @@
 
 ![见字·如面主页](docs/assets/interview-atlas-overview.png)
 
-## 2.0 · 信笺工作台
+## 2.1 · 独立模块与统一信笺界面
 
-这次较大改版统一了暖白信笺界面与深绿交互，串起整理、练习和分享：
+本次同步全部本地开发更新，在暖白信笺界面上保留原有产品能力：
 
+- 首页、面试记录、原子问答、聚合块、简历经历各有独立入口；练习内可使用闪卡、模拟面试和历史复盘，旧标签页和数据兼容。
+- 共享控件、图标、键盘焦点与手机 44px 热区统一；减少重复边框，保持导航和阅读滚动稳定。
 - 主页闪卡支持翻转、滑动、触控板、方向键和洗牌；桌面与手机使用同一套响应式工作台。
 - 模拟面试 Agent 按需检索本地知识，校验主问题与追问动作，保存回答后再进入下一轮；中断可恢复，报告引用真实回答。
 - Word、文字 PDF、TXT/Markdown 和可选图片简历先解析、核对，再导入所选经历。
@@ -60,11 +62,11 @@
 
 ## macOS 下载安装
 
-2.0 桌面版支持 Apple Silicon Mac，系统要求为 macOS 15 及以上。
+2.1 桌面版支持 Apple Silicon Mac，系统要求为 macOS 15 及以上。
 
 应用名称为“见字·如面”；旧安装包可能仍显示“千面”。
 
-1. 打开 [GitHub Releases](https://github.com/an-an-618/interview-atlas/releases/latest)，下载 `Interview-Atlas_2.0.0_aarch64.dmg` 和 `SHA256SUMS-macos.txt`。升级前建议在设置页导出 JSON 备份。
+1. 打开 [GitHub Releases](https://github.com/an-an-618/interview-atlas/releases/latest)，下载 `Interview-Atlas_2.1.0_aarch64.dmg` 和 `SHA256SUMS-macos.txt`。升级前建议在设置页导出 JSON 备份。
 2. 打开 DMG，将“见字·如面.app”拖到“Applications”快捷入口。
 3. 当前版本尚未经过 Apple 公证。首次启动时，在 Finder 中右键“见字·如面.app”，选择“打开”，再确认一次“打开”。必要时前往“系统设置 → 隐私与安全性 → 仍要打开”。
 4. 后续可从“应用程序”、Spotlight、启动台或 Dock 打开见字·如面。
@@ -79,7 +81,7 @@ shasum -a 256 -c SHA256SUMS-macos.txt
 
 ## Windows 下载安装
 
-2.0 桌面版支持 x64 Windows 10/11。打开 [GitHub Releases](https://github.com/an-an-618/interview-atlas/releases/latest)，普通用户下载并运行 `Interview-Atlas_2.0.0_x64-setup.exe`；管理部署可使用 MSI。升级前建议导出 JSON 备份。双路录音目前仅支持 macOS 15。
+2.1 桌面版支持 x64 Windows 10/11。打开 [GitHub Releases](https://github.com/an-an-618/interview-atlas/releases/latest)，普通用户下载并运行最新 `-setup.exe` 安装器；管理部署可使用 MSI。升级前建议导出 JSON 备份。双路录音目前仅支持 macOS 15。
 
 当前版本尚未进行 Authenticode 签名，Microsoft Defender SmartScreen 可能在首次启动时提示风险。构建、安装与后续签名说明见 [Windows 构建与发布](docs/engineering/windows-distribution.md)。
 
@@ -92,15 +94,19 @@ npm ci
 npm run dev
 ```
 
-Vite 会在终端输出本地访问地址。项目不需要后端服务或账号系统。
+Vite 使用固定地址 `http://127.0.0.1:43118`。项目不需要后端服务或账号系统。完整的环境准备、数据迁移和继续开发步骤见 [跨电脑开发交接](docs/engineering/development-handoff.md)。
+
+手机与电脑在同一网络时，执行 `npm run dev -- --host 0.0.0.0`，再在手机打开终端的 Network 地址。网页布局支持窄屏与触摸；生产 Web 压缩包可从 Releases 下载，解压后通过 HTTP(S) 静态服务器访问。
 
 | 命令 | 用途 |
 | --- | --- |
 | `npm run dev` | 启动本地开发服务 |
 | `npm run desktop:dev` | 启动桌面开发模式 |
+| `npm run desktop:build` | 按本机系统生成 Mac 或 Windows 安装包 |
 | `npm run desktop:build:macos` | 生成 macOS `.app` 与 `.dmg` |
 | `npm run desktop:build:windows` | 生成 Windows NSIS 与 MSI 安装包 |
 | `npm test` | 运行 Vitest 测试 |
+| `npm run test:ui` | 隔离数据验证多尺寸、手机手势与 75%–200% 缩放；先执行 `npx playwright install chromium` |
 | `npm run typecheck` | 执行 TypeScript 类型检查 |
 | `npm run build` | 生成生产构建 |
 
@@ -132,4 +138,4 @@ Vite 会在终端输出本地访问地址。项目不需要后端服务或账号
 
 ## 一期边界
 
-2.0 桌面版支持 Apple Silicon macOS 与 x64 Windows，仍是本地优先应用，不是托管在线服务。Linux、Intel/Universal macOS、正式签名、公证和自动更新仍待后续实现；当前不包含云同步、多人协作、企业端、自动投递、屏幕画面录制、视频和实时转写。
+2.1 桌面版支持 Apple Silicon macOS 与 x64 Windows，仍是本地优先应用，不是托管在线服务。Linux、Intel/Universal macOS、正式签名、公证和自动更新仍待后续实现；当前不包含云同步、多人协作、企业端、自动投递、屏幕画面录制、视频和实时转写。
