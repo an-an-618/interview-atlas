@@ -1,4 +1,5 @@
-import { ArrowLeft, BookOpen, FileText, Link2, Plus, Search, Star, X } from "lucide-react";
+import { ArrowLeft, BookOpen, Link2, Search, X } from "lucide-react";
+import { Button, IconButton, UIIcon } from "./UI";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Workspace } from "../domain/types";
 import { draftFor, knowledgeEntries, kindLabels, relatedTargets, type KnowledgeDraft, type KnowledgeKind, type KnowledgeTarget } from "../domain/workbench";
@@ -55,7 +56,7 @@ export function KnowledgeWorkspace({ workspace, selected, onSelect, onSave, onRe
     <header className="workbench-heading"><div className="knowledge-header-title">{onBack ? <button className="icon-button" aria-label="返回上次位置" onClick={() => requestWorkbenchNavigation(onBack)}><ArrowLeft size={18}/></button> : null}<h1>知识库</h1></div>
       <nav className="workspace-tabs" aria-label="知识库分类">{(["all","interview","question","sync","resume"] as const).map(k => <button className={kind === k ? "active" : ""} key={k}
         onClick={() => requestWorkbenchNavigation(() => {setKind(k);setSource("");setGroup("");onSelect(null);setMobileDetail(false);})}>{k === "all" ? "全部" : kindLabels[k]}</button>)}</nav>
-      <button className="button primary" onClick={() => requestWorkbenchNavigation(() => onCreate(kind === "all" ? "question" : kind))}><Plus size={15}/>新建{kind === "all" ? "" : kindLabels[kind]}</button></header>
+      <Button variant="primary" icon="add" onClick={() => requestWorkbenchNavigation(() => onCreate(kind === "all" ? "question" : kind))}>新建{kind === "all" ? "" : kindLabels[kind]}</Button></header>
     <div className={`knowledge-grid ${compare ? "with-compare" : ""}`}>
       <aside className="knowledge-list-panel">
         <label className="search-field"><Search size={16}/><input aria-label="搜索知识库条目" placeholder="搜索标题或正文" value={query} onChange={e => setQuery(e.target.value)}/></label>
@@ -69,7 +70,7 @@ export function KnowledgeWorkspace({ workspace, selected, onSelect, onSave, onRe
         </details>
         <div className="knowledge-object-list" ref={list} onScroll={e=>sessionStorage.setItem("atlas-2.1:knowledge-scroll",String(e.currentTarget.scrollTop))} aria-label="知识库条目">
           {visible.map(e=><button key={`${e.kind}:${e.id}`} className={`directory-row ${same(e,target) ? "active" : ""}`} onClick={()=>select(e)}>
-            <strong><FileText size={15}/>{e.title}</strong><small>{kindLabels[e.kind]} · {relatedTargets(workspace,e).length} 份关联资料</small></button>)}
+            <strong><UIIcon name={e.kind}/>{e.title}</strong><small>{kindLabels[e.kind]} · {relatedTargets(workspace,e).length} 份关联资料</small></button>)}
           {!visible.length ? <p className="muted">没有匹配的资料。可调整筛选或新建。</p> : null}
         </div>
         <footer><span>{visible.length} 条资料</span><button className="text-button" onClick={() => requestWorkbenchNavigation(() => onManage(kind === "all" ? "interview" : kind))}>{kind === "resume" ? "解析简历 / 管理经历" : "管理列表与整理"}</button></footer>
@@ -119,8 +120,8 @@ function KnowledgeEditor({ workspace,target,compare,onCompare,onSave,onRelation,
       <button className="back-button knowledge-mobile-back" onClick={()=>requestWorkbenchNavigation(onMobileBack)}><ArrowLeft size={15}/>返回列表</button>
       <header><div><p className="eyebrow">{kindLabels[target.kind]} · {target.kind==="sync"?"可复用的回答":"自己的资料"}</p>
         <input className="knowledge-title" aria-label="资料标题" value={draft.title} onChange={e=>change("title",e.target.value)} disabled={target.kind==="interview"}/></div>
-        <div className="workspace-actions">{favorite!==undefined?<button className="icon-button" aria-label={favorite?"取消收藏":"收藏"} aria-pressed={favorite} onClick={()=>onFavorite(target,!favorite)}><Star size={20} fill={favorite?"currentColor":"none"}/></button>:null}
-          <button className="button secondary" onClick={()=>onShare({kind:target.kind==="sync"?"aggregate":target.kind,id:target.id})}>分享</button></div></header>
+        <div className="workspace-actions">{favorite!==undefined?<IconButton icon="favorite" label={favorite?"取消收藏":"收藏"} selected={favorite} aria-pressed={favorite} onClick={()=>onFavorite(target,!favorite)}/>:null}
+          <Button icon="share" onClick={()=>onShare({kind:target.kind==="sync"?"aggregate":target.kind,id:target.id})}>分享</Button></div></header>
       <div className="knowledge-relation-bar"><button ref={compareButton} className="text-button" aria-expanded={compare} onClick={()=>onCompare(!compare)}><BookOpen size={16}/>对照资料 · {relations.length}</button>
         <button className="text-button" onClick={()=>setManaging(true)}><Link2 size={14}/>管理关联</button>
         {target.kind==="interview"?<button className="text-button" onClick={()=>requestWorkbenchNavigation(()=>onOrganize(target.id))}>继续审核</button>:null}</div>
@@ -129,7 +130,7 @@ function KnowledgeEditor({ workspace,target,compare,onCompare,onSave,onRelation,
       <div className="knowledge-edit-body">
         {target.kind==="interview"?<div className="interview-metadata-fields">{(["company","role","round","date","source"] as const).map((f,i)=><label key={f}><span>{["公司","岗位","轮次","日期","来源"][i]}</span>
           <input type={f==="date"?"date":"text"} aria-label={["公司","岗位","轮次","日期","来源"][i]} value={draft[f]} onChange={e=>change(f,e.target.value)}/></label>)}</div>:null}
-        {target.kind==="resume"?<div className="interview-metadata-fields">{(["type","organization","period"] as const).map((f,i)=><label key={f}><span>{["经历类型","组织","时间"][i]}</span><input value={draft[f]} onChange={e=>change(f,e.target.value)}/></label>)}</div>:null}
+        {target.kind==="resume"?<div className="interview-metadata-fields">{(["type","organization","period"] as const).map((f,i)=><label key={f}><span>{["经历类型","组织","时间"][i]}</span><input aria-label={["经历类型","组织","时间"][i]} value={draft[f]} onChange={e=>change(f,e.target.value)}/></label>)}</div>:null}
         {tab==="notes"?<textarea aria-label="复习笔记正文" className="knowledge-textarea" rows={16} value={draft.notes} onChange={e=>change("notes",e.target.value)}/>:
           target.kind==="sync"||target.kind==="question"?<AnswerEditor value={draft.body} onChange={body=>change("body",body)} minRows={14} placeholder="整理这份回答…"/>:
             <textarea aria-label={target.kind==="interview"?"面试原文正文":"经历要点正文"} rows={18} className="knowledge-textarea" value={draft.body} onChange={e=>change("body",e.target.value)}/>}
@@ -138,7 +139,7 @@ function KnowledgeEditor({ workspace,target,compare,onCompare,onSave,onRelation,
       {error?<p className="form-error" role="alert">{error} 草稿仍在，可继续修改或重试。</p>:null}
       <footer className="knowledge-save-footer"><span>{target.kind==="sync"?"正文修改只更新此聚合块":"正文与关联各自保存"}</span>
         <div className="workspace-actions"><button className="button secondary" disabled={busy||!dirty} onClick={()=>{setDraft(baseline);setCached({draft:baseline,dirty:false});}}>放弃修改</button>
-          <button className="button primary" disabled={busy||!dirty} onClick={()=>void save()}>{busy?"保存中…":"保存修改"}</button></div></footer>
+          <Button variant="primary" icon="save" loading={busy} disabled={!dirty} onClick={()=>void save()}>保存修改</Button></div></footer>
     </article>
     {compare?<ComparePanel workspace={workspace} target={target} onClose={closeCompare} onSelect={onSelect} onRelation={onRelation}/>:null}
     {pending?<Modal title="正文尚未保存" description="选择如何处理当前草稿，再离开这个对象。" onClose={()=>setPending(null)}>

@@ -11,12 +11,15 @@
     "build": "tsc -b && vite build",
     "desktop": "tauri",
     "desktop:dev": "tauri dev",
-    "desktop:build": "MACOSX_DEPLOYMENT_TARGET=15.0 tauri build --bundles app && bash scripts/create-macos-dmg.sh",
+    "desktop:build": "node scripts/build-desktop.mjs",
     "desktop:install:macos": "npm run desktop:build && bash scripts/install-macos-app.sh",
-    "desktop:build:macos": "npm run desktop:build",
-    "desktop:build:windows": "tauri build --bundles nsis,msi",
+    "desktop:build:macos": "node scripts/build-desktop.mjs darwin",
+    "desktop:build:windows": "node scripts/build-desktop.mjs win32",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
+    "test:ui": "node scripts/check-browser.mjs",
+    "test:flows": "node scripts/check-browser.mjs check-aggregate-blocks check-interview-lifecycle check-background-extraction check-resume-import check-image-sharing check-mock-interview",
+    "test:webkit": "node scripts/check-browser.mjs check-cross-browser",
     "test:watch": "vitest"
   },
   "dependencies": {
@@ -37,8 +40,9 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
+    "playwright": "1.65.1",
     "typescript": "7.0.2",
-    "vite": "8.3.1",
-    "vitest": "5.0.2"
+    "vite": "8.3.3",
+    "vitest": "5.0.3"
   }
 }

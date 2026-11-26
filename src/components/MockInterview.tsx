@@ -33,8 +33,6 @@ import { MockInterviewRuntime, type MockInterviewRuntimeOptions } from "../ai/mo
 import { normalizeMockCompany } from "../ai/mockInterviewContext";
 import { getMockInterviewProgress } from "../domain/mockInterviewHarness";
 import { useWorkbenchState } from "../hooks/useWorkbenchState";
-import { ReviewWorkspace } from "./ReviewWorkspace";
-import type { KnowledgeTarget } from "../domain/workbench";
 import type { MockInterviewHarness, MockInterviewMessage } from "../domain/types";
 import mockInterviewScene from "../assets/mock-interview-scene.png";
 import mockInterviewer from "../assets/mock-interviewer.png";
@@ -80,8 +78,6 @@ interface MockInterviewPageProps {
   ) => Promise<MockInterviewSession>;
   onOpenSettings: () => void;
   onOpenInterview: (id: string) => void;
-  onOpenKnowledge?: (target: KnowledgeTarget) => void;
-  onFindKnowledge?: (query: string) => void;
 }
 
 function formatSessionDate(value: string): string {
@@ -748,10 +744,12 @@ function FeedbackColumn({
   title,
   items,
   tone,
+  session,
 }: {
   title: string;
   items: MockInterviewFeedback["strengths"];
   tone: "positive" | "attention";
+  session: MockInterviewSession;
 }) {
   return (
     <section className={`mock-feedback-column ${tone}`}>
@@ -761,6 +759,8 @@ function FeedbackColumn({
           <article key={`${item.title}-${item.detail}`}>
             <strong>{item.title}</strong>
             <p>{item.detail}</p>
+            {item.evidenceRefs?.filter(ref => session.messages.some(m => m.id === ref.messageId && m.content.includes(ref.quote)))
+              .map((ref,index) => <blockquote key={index}>{ref.quote}</blockquote>)}
           </article>
         ))
       ) : (
@@ -856,11 +856,13 @@ function MockInterviewReport({
               title="有效表现"
               items={feedback.strengths}
               tone="positive"
+              session={session}
             />
             <FeedbackColumn
               title="需要改进"
               items={feedback.improvements}
               tone="attention"
+              session={session}
             />
           </div>
 
@@ -897,6 +899,8 @@ function MockInterviewReport({
                     {review.evidence ? (
                       <blockquote>{review.evidence}</blockquote>
                     ) : null}
+                    {review.evidenceRefs?.filter(ref => session.messages.some(m => m.id === ref.messageId && m.content.includes(ref.quote)))
+                      .map((ref,index) => <blockquote key={index}>{ref.quote}</blockquote>)}
                     {review.suggestion ? (
                       <p>
                         <strong>改进方向</strong>
@@ -931,7 +935,7 @@ function MockInterviewReport({
             onClick={() => onOpenInterview(session.interviewId!)}
           >
             <FileText size={15} aria-hidden="true" />
-            查看知识库面试记录
+            查看面试记录
           </button>
         ) : null}
         <button className="button quiet" type="button" onClick={onBack}>
@@ -958,8 +962,6 @@ export function MockInterviewPage({
   onApplyAnalysis,
   onOpenSettings,
   onOpenInterview,
-  onOpenKnowledge,
-  onFindKnowledge,
 }: MockInterviewPageProps) {
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1033,9 +1035,8 @@ export function MockInterviewPage({
 
   if (session.status === "completed") {
     return (
-      <ReviewWorkspace
+      <MockInterviewReport
         session={session}
-        workspace={workspace}
         analyzing={analyzing}
         error={error || session.harness?.error || null}
         onRetry={() => void runtimeRef.current?.retry(session.id)}
@@ -1043,9 +1044,7 @@ export function MockInterviewPage({
           setError(null);
           onFocus(null);
         }}
-        onFocus={onFocus}
-        onOpen={target => onOpenKnowledge ? onOpenKnowledge(target) : target.kind === "interview" ? onOpenInterview(target.id) : undefined}
-        onFind={query => onFindKnowledge?.(query)}
+        onOpenInterview={onOpenInterview}
       />
     );
   }

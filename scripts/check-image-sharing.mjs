@@ -42,8 +42,8 @@ const openShare = async (selector) => {
   await page.locator(selector).getByRole("button", { name: "分享", exact: true }).first().click();
   await canvas.waitFor();
 };
-const closeShare = () => dialog.getByRole("button", { name: "关闭", exact: true }).click();
-const nav = (name) => page.locator(".sidebar").getByRole("button", { name, exact: true }).click();
+const closeShare = () => dialog.getByRole("button", { name: "关闭弹窗", exact: true }).click();
+const nav = (name) => page.getByRole("navigation",{name:"一级导航"}).getByRole("button", { name, exact: true }).click();
 const waitDrawing = (needle, present = true) => page.waitForFunction(({ needle, present }) => {
   const canvas = document.querySelector(".share-canvas-wrap canvas");
   const lines = canvas && window.__shareText.get(canvas);
@@ -88,7 +88,7 @@ const geometryCheck = async (width) => {
 
 try {
   await page.goto(appUrl);
-  await page.locator(".overview-page").waitFor();
+  await page.locator(".workspace-global-header").waitFor();
   const fixture = await page.evaluate(async () => {
     const { createDemoWorkspace } = await import("/src/data/demo.ts");
     const { indexedDbRepository } = await import("/src/data/repository.ts");
@@ -119,7 +119,7 @@ try {
     return { questionTitle: question.title, blockTitle: block.title, resumeTitle: resume.title, company: interview.company, rawText: interview.rawText, sources, snapshot: JSON.stringify(workspace) };
   });
   await page.reload();
-  await page.locator(".overview-page").waitFor();
+  await page.locator(".workspace-global-header").waitFor();
   // IndexedDB returns rows in primary-key order; compare against the loaded baseline.
   const loadedFixture = await page.evaluate(async () => {
     const { indexedDbRepository } = await import("/src/data/repository.ts");

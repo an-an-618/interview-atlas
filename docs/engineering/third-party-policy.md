@@ -60,3 +60,9 @@ Tauri 2.12.0 is approved by [ADR 0004](../adr/0004-macos-tauri-wrapper.md) and [
 The requested resume parsing feature pins `mammoth@1.13.0` (BSD-2-Clause, `mwilliamson/mammoth.js`) and Mozilla `pdfjs-dist@6.5.438` (Apache-2.0). Their browser code reads user-selected bytes in memory and has no API credentials, cloud uploads, telemetry, subprocesses or desktop filesystem permissions. PDF worker/CMap resources are packaged locally. Only the existing AI adapter sends user-authorized resume evidence to the configured provider.
 
 See accepted [ADR 0007](../adr/0007-local-resume-parsing.md) for the dependency behavior, alternatives, limits and removal steps reviewed for the 2.0 release.
+
+## Reproducible browser checks
+
+The 2.1 release pins Microsoft's `playwright@1.65.1` (Apache-2.0, `microsoft/playwright`) as a development dependency. It makes existing browser scripts runnable from a fresh Mac or Windows checkout without an untracked local module path. `npx playwright install chromium` downloads the versioned test browser from Microsoft's distribution endpoints; tests launch a child browser and a local Vite process, use temporary profiles and synthetic IndexedDB data on port 43119, and require no application credentials. Browser artifacts and profiles stay in the OS temporary directory. Playwright is not bundled into the application; remove the dependency and `scripts/check-browser.mjs` to roll back.
+
+Tagged CI releases use the GitHub-hosted runner's `gh` CLI to download verified Actions artifacts, check SHA-256 hashes and create a Release. Only the tag publishing job receives `contents: write` and `actions: read`; pull requests and normal validation retain read-only permissions. It handles source and build artifacts, with no user data or application secrets.

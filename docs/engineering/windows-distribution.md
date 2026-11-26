@@ -42,9 +42,9 @@ src-tauri\target\release\bundle\msi\*.msi
 
 ## GitHub Actions 构建
 
-推送分支、创建 Pull Request，或在 Actions 页面手动运行 `CI` 工作流。完成后，在该次运行的 Artifacts 区域下载 `interview-atlas-windows-x64`，其中包含 `.exe` 和 `.msi`。
+创建 Pull Request、推送 `main`／版本标签，或在 Actions 页面手动运行 `CI` 工作流。完成后，在该次运行的 Artifacts 区域下载 `interview-atlas-windows-x64`，其中包含 `.exe` 和 `.msi`。
 
-Actions 产物保留 7 天。正式版本应将签名后的安装包和 SHA-256 校验值上传到 GitHub Release。
+Actions 产物保留 7 天。版本标签 CI 在 Mac、Windows 验证全部通过后将安装包和 SHA-256 校验值上传到 GitHub Release，长期提供下载；当前预览安装包明确披露未签名状态。
 
 ## 安装与数据边界
 

@@ -45,6 +45,8 @@ Do not use real resumes, interview records, credentials, or private user data.
 
 ## Continuing on another computer
 
+For the latest released implementation, clone the default `main` branch and follow [the current development handoff](development-handoff.md). A PR checkout is needed only when continuing an unfinished branch.
+
 ```powershell
 git clone https://github.com/an-an-618/interview-atlas.git
 cd interview-atlas

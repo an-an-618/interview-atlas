@@ -71,7 +71,8 @@ await context.route("**/*", (route) => {
   unexpected.push(url.origin);
   return route.abort();
 });
-const nav = (name) => page.locator(".sidebar").getByRole("button", { name, exact: true }).click();
+const nav = (name) => name==="设置" ? page.getByRole("button",{name,exact:true}).click()
+  : page.getByRole("navigation",{name:"一级导航"}).getByRole("button", { name, exact: true }).click();
 const dialog = page.getByRole("dialog");
 const upload = (name, buffer, mimeType) => dialog.locator('input[type="file"]').setInputFiles({ name, mimeType, buffer: Buffer.from(buffer) });
 const parseButton = () => dialog.getByRole("button", { name: "同意并开始解析" });
@@ -95,7 +96,7 @@ const open = async () => {
   await dialog.getByRole("heading", { name: "从简历提取经历" }).waitFor();
 };
 const close = async () => {
-  await dialog.getByRole("button", { name: "关闭", exact: true }).click();
+  await dialog.getByRole("button", { name: "关闭弹窗", exact: true }).click();
   await dialog.waitFor({ state: "detached" });
 };
 const waitRead = () => dialog.locator(".resume-import-source").first().waitFor();
@@ -143,7 +144,7 @@ function pdfBuffer(lines, { chinese = false, blank = false } = {}) {
 
 try {
   await page.goto(appUrl);
-  await page.locator(".overview-page").waitFor();
+  await page.locator(".workspace-global-header").waitFor();
   await nav("简历经历");
   await open();
   assert.match(await dialog.locator(".resume-import-privacy").innerText(), /模型服务商将能读取/);
@@ -217,7 +218,7 @@ try {
   assert.equal(imported.find((row) => row.title === "产品实习 · 已核对").bullets[0], "完成 12 次访谈。");
   assert.equal(JSON.stringify(imported).includes("sourceExcerpt"), false);
   await page.reload();
-  await page.locator(".overview-page").waitFor();
+  await page.locator(".workspace-global-header").waitFor();
   await nav("简历经历");
   await page.getByRole("heading", { name: "产品实习 · 已核对", exact: true }).waitFor();
 

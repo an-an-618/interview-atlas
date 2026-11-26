@@ -12,10 +12,12 @@
 
 ![Interview Atlas overview](docs/assets/interview-atlas-overview.png)
 
-## 2.0 · Stationery Workbench
+## 2.1 · Independent Modules and Shared Stationery UI
 
-This major update brings preparation, practice and sharing into a warm stationery interface with consistent green controls:
+This release synchronizes local development and preserves the original capabilities in a shared stationery interface:
 
+- Dedicated Home, Interview Records, Atomic Q&A, Aggregate Blocks and Resume Experiences entries; Practice contains flashcards, mock interviews and history, with legacy tab and data compatibility.
+- Shared controls, icons, keyboard focus and 44px touch targets; fewer repeated borders and stable navigation and reading layouts.
 - Responsive home workbench with portrait flashcards, flip, swipe, trackpad, keyboard and animated shuffle.
 - Recoverable mock-interview agent with readonly local knowledge tools, validated question/followup actions and reports grounded in saved candidate answers.
 - Reviewed experience import from Word, text PDFs, TXT/Markdown and optional resume images.
@@ -60,11 +62,11 @@ The current application includes:
 
 ## Install on macOS
 
-The 2.0 desktop release supports Apple Silicon Macs running macOS 15 or later.
+The 2.1 desktop release supports Apple Silicon Macs running macOS 15 or later.
 
 The current source uses the new Chinese name, `见字·如面`; previously published installers may still display `千面`. The English name remains Interview Atlas.
 
-1. Export a JSON backup from Settings before upgrading. Open the [latest GitHub Release](https://github.com/an-an-618/interview-atlas/releases/latest) and download `Interview-Atlas_2.0.0_aarch64.dmg` plus `SHA256SUMS-macos.txt`.
+1. Export a JSON backup from Settings before upgrading. Open the [latest GitHub Release](https://github.com/an-an-618/interview-atlas/releases/latest) and download `Interview-Atlas_2.1.0_aarch64.dmg` plus `SHA256SUMS-macos.txt`.
 2. Open the DMG and drag `见字·如面.app` onto the `Applications` shortcut.
 3. The release is not Apple-notarized yet. For the first launch, Control-click `见字·如面.app` in Finder, choose **Open**, then confirm **Open** again. If needed, use **System Settings → Privacy & Security → Open Anyway**.
 4. Later, launch 见字·如面 from Applications, Spotlight, Launchpad, or the Dock.
@@ -79,13 +81,15 @@ The desktop app and browser version use separate IndexedDB workspaces and do not
 
 ## Install on Windows
 
-The 2.0 desktop release targets x64 Windows 10 and 11. Export a JSON backup before upgrading, then open the [latest GitHub Release](https://github.com/an-an-618/interview-atlas/releases/latest) and run `Interview-Atlas_2.0.0_x64-setup.exe`. An MSI is available for managed installation. Dual-track recording currently requires macOS 15.
+The 2.1 desktop release targets x64 Windows 10 and 11. Export a JSON backup before upgrading, then open the [latest GitHub Release](https://github.com/an-an-618/interview-atlas/releases/latest) and run the latest `-setup.exe` installer. An MSI is available for managed installation. Dual-track recording currently requires macOS 15.
 
 The release is not Authenticode-signed, so Microsoft Defender SmartScreen may warn on first launch. See the [Windows distribution guide](docs/engineering/windows-distribution.md) for build, installation, and signing details.
 
 ## Run locally
 
 Requirements: Node.js 24 and npm 11.
+
+For a fresh checkout, desktop prerequisites, data migration and the current implementation contract, see the [development handoff](docs/engineering/development-handoff.md).
 
 ```bash
 npm ci
@@ -98,13 +102,17 @@ Vite serves the app on the local URL printed in the terminal. No backend or acco
 | --- | --- |
 | `npm run dev` | Start the local development server |
 | `npm run desktop:dev` | Start the desktop application in development mode |
+| `npm run desktop:build` | Build installers for the current Mac or Windows host |
 | `npm run desktop:build:macos` | Build the macOS `.app` and `.dmg` |
 | `npm run desktop:build:windows` | Build Windows NSIS and MSI installers |
 | `npm test` | Run the Vitest suite |
+| `npm run test:ui` | Check isolated desktop/mobile interactions and 75%–200% zoom; first run `npx playwright install chromium` |
 | `npm run typecheck` | Run TypeScript project checks |
 | `npm run build` | Create a production build |
 
 Desktop builds also require Rust and platform build tools. See the [macOS](docs/engineering/macos-distribution.md) and [Windows](docs/engineering/windows-distribution.md) distribution guides.
+
+For phone testing on the same network, run `npm run dev -- --host 0.0.0.0` and open the printed Network URL. The release Web ZIP contains static production files to serve over HTTP(S).
 
 ## Architecture
 
@@ -132,4 +140,4 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. Security and p
 
 ## Scope
 
-The 2.0 desktop release supports Apple Silicon macOS and x64 Windows and remains a local-first application rather than a hosted service. Linux, Intel/Universal macOS, production signing, notarization, and automatic updates remain future work. Cloud sync, collaboration, automatic applications, screen-video capture, video, and real-time transcription remain out of scope.
+The 2.1 desktop release supports Apple Silicon macOS and x64 Windows and remains a local-first application rather than a hosted service. Linux, Intel/Universal macOS, production signing, notarization, and automatic updates remain future work. Cloud sync, collaboration, automatic applications, screen-video capture, video, and real-time transcription remain out of scope.

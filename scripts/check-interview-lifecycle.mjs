@@ -14,13 +14,12 @@ const page = await context.newPage();
 page.setDefaultTimeout(10_000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
-const nav = (name) => page.locator(".sidebar").getByRole("button", { name, exact: false }).click();
+const nav = (name) => page.getByRole("navigation",{name:"一级导航"}).getByRole("button", { name, exact: true }).click();
 const stored = () => page.evaluate(async () => (await import("/src/data/repository.ts")).indexedDbRepository.load());
 try {
   await page.goto(process.env.APP_URL ?? "http://127.0.0.1:43225");
-  await page.locator(".overview-page").waitFor();
-  await page.locator(".sidebar").getByRole("button", { name: "新建", exact: true }).click();
-  await page.getByRole("button", { name: /导入面经/ }).click();
+  await page.locator(".workspace-global-header").waitFor();
+  await page.getByRole("button", { name: "导入面经",exact:true }).click();
   await page.getByLabel("面试原文", { exact: true }).fill("发言人 1\n00:00 请介绍一下你自己。");
   assert.equal(await page.getByLabel("公司名", { exact: true }).inputValue(), "未命名面试");
   await page.getByLabel("公司名", { exact: true }).fill("手动填写公司");
@@ -28,7 +27,7 @@ try {
   await page.getByLabel("面试原文", { exact: true }).fill("发言人 1\n00:00 请介绍一下你自己。\n答：测试回答。");
   assert.equal(await page.getByLabel("公司名", { exact: true }).inputValue(), "手动填写公司");
   await page.getByRole("button", { name: "保存并稍后审核", exact: true }).click();
-  await page.locator(".import-modal").waitFor({ state: "detached" });
+  await page.locator(".import-workspace").waitFor({ state: "detached" });
   assert.equal((await stored()).interviews[0].company, "手动填写公司");
 
   const ids = await page.evaluate(async () => {
@@ -56,7 +55,7 @@ try {
     return { interview: record.interview.id, question: question.question.id, standalone: standalone.question.id, block: block.syncBlock.id };
   });
   await page.reload();
-  await page.locator(".overview-page").waitFor();
+  await page.locator(".workspace-global-header").waitFor();
   await nav("面试记录");
   const row = page.locator(".interview-row").filter({ hasText: "编辑验证公司" });
   assert.ok(!(await row.innerText()).includes(".docx"), "source filename stays out of list subtitle");
@@ -81,7 +80,7 @@ try {
   assert.equal(saved.interviews.find((item) => item.id === ids.interview).rawText, "保留的原始面经");
   assert.equal(saved.syncBlocks[0].body, "保留稳定回答");
   await page.reload();
-  await page.locator(".overview-page").waitFor();
+  await page.locator(".workspace-global-header").waitFor();
   await nav("面试记录");
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SCREENSHOT_DIR}/interview-list-desktop.png` });
 
@@ -134,7 +133,7 @@ try {
   await page.getByRole("button", { name: "确认永久删除", exact: true }).click();
   await page.locator(".modal").waitFor({ state: "detached" });
   await page.reload();
-  await page.locator(".overview-page").waitFor();
+  await page.locator(".workspace-global-header").waitFor();
   saved = await stored();
   assert.equal(saved.interviews.length, 1);
   assert.equal(saved.interviews[0].company, "保留公司");

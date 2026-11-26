@@ -124,8 +124,9 @@ try {
       return { sessions: values[0], interviews: values[1], questions: values[2] };
     });
     const navigate = async (name) => {
-      if (width < 500) await page.getByTitle("打开导航", { exact: true }).click();
-      await page.locator(".sidebar").getByRole("button", { name, exact: true }).click();
+      if(name === "设置") return page.getByRole("button",{name:"设置",exact:true}).click();
+      await page.getByRole("navigation",{name:"一级导航"}).getByRole("button", { name: name === "模拟面试" ? "练习" : name, exact: true }).click();
+      if(name === "模拟面试") await page.getByRole("navigation",{name:"练习方式"}).getByRole("button",{name:"模拟面试",exact:true}).click();
     };
     const waitFor = async (predicate, message) => {
       for (let i = 0; i < 100; i++) {
@@ -136,7 +137,7 @@ try {
       throw new Error(message);
     };
     await page.goto(base);
-    await page.locator(".sidebar").waitFor({ state: "attached" });
+    await page.locator(".workspace-global-header").waitFor({ state: "attached" });
     // Seed only this disposable browser context with synthetic credentials and configuration.
     await page.evaluate(async (endpoint) => {
       sessionStorage.setItem("interview-atlas.ai.provider-keys", JSON.stringify({ custom: "synthetic-test-only" }));
@@ -168,7 +169,7 @@ try {
     }, `${base}/v1`);
     await page.reload();
     await navigate("模拟面试");
-    await page.getByRole("button", { name: "进入面试间", exact: true }).click();
+    await page.locator(".mock-setup").waitFor();
     await page.getByPlaceholder("例如：字节跳动").fill("示例星河");
     await page.getByPlaceholder("例如：AI 产品经理").fill("Agent 产品经理");
     await page.getByPlaceholder("粘贴岗位职责和要求，面试官会据此调整考察重点。").fill("负责智能体工具调用策略与评测指标");
@@ -205,7 +206,7 @@ try {
     mode = "success";
     releaseHeld?.();
     await navigate("模拟面试");
-    await page.getByRole("button", { name: "查看历史模拟", exact: true }).click();
+    await page.getByRole("navigation",{name:"练习方式"}).getByRole("button",{name:"历史复盘",exact:true}).click();
     await page.locator(".mock-history-list button").first().click();
     await page.getByRole("button", { name: "重试本轮", exact: true }).waitFor();
     await page.getByRole("button", { name: "重试本轮", exact: true }).click();

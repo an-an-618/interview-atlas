@@ -7,7 +7,7 @@ textarea:focus-visible,
 select:focus-visible,
 [role="button"]:focus-visible,
 .review-stage:focus-visible {
-  outline: 3px solid var(--focus-ring);
+  outline: 2px solid var(--ui-focus);
   outline-offset: 3px;
 }
 
@@ -172,7 +172,7 @@ input[type="radio"],
 .import-candidate-check input:focus-visible + span,
 .sync-block-option input:focus-visible + .sync-block-radio,
 .question-option input:focus-visible + .check-box {
-  outline: 3px solid var(--focus-ring);
+  outline: 2px solid var(--ui-focus);
   outline-offset: 3px;
 }
 
@@ -190,7 +190,7 @@ input[type="radio"],
 .answer-editor:focus-within {
   border-color: var(--primary);
   outline: 0;
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  box-shadow: none;
 }
 
 /* The home header uses a single fine underline as its focus indicator. */
@@ -221,7 +221,7 @@ input[type="radio"],
 .mock-setup :is(input, select, textarea):focus {
   border-color: var(--primary);
   outline: 0;
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  box-shadow: none;
 }
 
 .answer-editor .answer-editor-row textarea:focus-visible {

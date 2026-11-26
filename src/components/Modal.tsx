@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { IconButton } from "./UI";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -65,9 +65,7 @@ export function Modal({
             <h2 id={titleId}>{title}</h2>
             {description ? <p className="muted">{description}</p> : null}
           </div>
-          <button className="icon-button" onClick={onClose} aria-label="关闭弹窗" title="关闭">
-            <X size={18} aria-hidden="true" />
-          </button>
+          <IconButton icon="close" label="关闭弹窗" onClick={onClose}/>
         </header>
         {children}
       </section>

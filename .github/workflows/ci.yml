@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   pull_request:
   workflow_dispatch:
 
@@ -45,6 +47,12 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Install browser for responsive checks
+        run: npx playwright install chromium
+
+      - name: Check desktop, mobile, touch and browser zoom
+        run: npm run test:ui
+
       - name: Check TypeScript
         run: npm run typecheck
 
@@ -81,6 +89,22 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Archive portable web build
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          (cd dist && zip -qr "../Interview-Atlas_${version}_web.zip" .)
+          shasum -a 256 "Interview-Atlas_${version}_web.zip" > SHA256SUMS-web.txt
+
+      - name: Upload web build
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: interview-atlas-web
+          path: |
+            Interview-Atlas_*_web.zip
+            SHA256SUMS-web.txt
+          if-no-files-found: error
+          retention-days: 7
+
   windows-package:
     name: Windows x64 package
     runs-on: windows-2025
@@ -108,6 +132,12 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Install browser for responsive checks
+        run: npx playwright install chromium
+
+      - name: Check desktop, mobile, touch and browser zoom
+        run: npm run test:ui
+
       - name: Build Windows installers
         run: npm run desktop:build:windows
 
@@ -130,6 +160,25 @@ jobs:
             "$hash  $($_.Name)"
           } | Set-Content -Path $checksumPath -Encoding ascii
 
+      - name: Smoke test Windows install and startup
+        shell: pwsh
+        run: |
+          $installer = @(Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe")[0]
+          $installDir = Join-Path $env:RUNNER_TEMP "atlas-install-smoke"
+          $setup = Start-Process $installer.FullName -ArgumentList "/S", "/D=$installDir" -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "Installer exited with $($setup.ExitCode)" }
+          $binary = @(Get-ChildItem $installDir -Filter "interview-atlas.exe" -Recurse)
+          if ($binary.Count -ne 1) { throw "Expected installed application executable" }
+          $app = Start-Process $binary[0].FullName -PassThru
+          try {
+            Start-Sleep -Seconds 5
+            $app.Refresh()
+            if ($app.HasExited) { throw "Application exited during startup: $($app.ExitCode)" }
+            Write-Output "PASS: NSIS installation and application startup"
+          } finally {
+            if (-not $app.HasExited) { Stop-Process -Id $app.Id }
+          }
+
       - name: Upload Windows installers
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
@@ -140,3 +189,35 @@ jobs:
             src-tauri/target/release/bundle/SHA256SUMS-windows.txt
           if-no-files-found: error
           retention-days: 7
+
+  publish:
+    name: Publish verified desktop and web downloads
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [validate, windows-package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download verified artifacts and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          test "$RELEASE_TAG" = "v${version}"
+          test -f "docs/releases/${RELEASE_TAG}.md"
+          gh run download "$RUN_ID" --repo "$REPOSITORY" --dir release-artifacts
+          mkdir release-files
+          find release-artifacts -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.msi' -o -name '*.zip' -o -name 'SHA256SUMS-*.txt' \) -exec cp {} release-files/ \;
+          test "$(find release-files -type f | wc -l)" -eq 7
+          (cd release-files && sha256sum --check SHA256SUMS-macos.txt && sha256sum --check SHA256SUMS-windows.txt && sha256sum --check SHA256SUMS-web.txt)
+          gh release create "$RELEASE_TAG" release-files/* \
+            --repo "$REPOSITORY" --verify-tag --latest \
+            --title "见字·如面 ${version} · 独立模块与统一信笺界面" \
+            --notes-file "docs/releases/${RELEASE_TAG}.md"
