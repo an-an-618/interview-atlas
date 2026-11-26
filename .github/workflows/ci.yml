@@ -158,10 +158,15 @@ jobs:
           }
 
           $checksumPath = "src-tauri/target/release/bundle/SHA256SUMS-windows.txt"
-          @($nsis[0], $msi[0]) | ForEach-Object {
+          $hashLines = @($nsis[0], $msi[0]) | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)"
-          } | Set-Content -Path $checksumPath -Encoding ascii
+          }
+          [System.IO.File]::WriteAllText(
+            (Join-Path $pwd $checksumPath),
+            (($hashLines -join "`n") + "`n"),
+            [System.Text.UTF8Encoding]::new($false)
+          )
 
       - name: Smoke test Windows install and startup
         shell: pwsh
