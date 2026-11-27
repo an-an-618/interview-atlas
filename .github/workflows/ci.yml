@@ -225,6 +225,18 @@ jobs:
           find release-artifacts -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.msi' -o -name '*.zip' -o -name 'SHA256SUMS-*.txt' \) -exec cp {} release-files/ \;
           test "$(find release-files -type f | wc -l)" -eq 7
           (cd release-files && sha256sum --check SHA256SUMS-macos.txt && sha256sum --check SHA256SUMS-windows.txt && sha256sum --check SHA256SUMS-web.txt)
+          (
+            cd release-files
+            for installer in *.exe *.msi; do
+              canonical="${installer// /-}"
+              if [ "$installer" != "$canonical" ]; then
+                test ! -e "$canonical"
+                mv -- "$installer" "$canonical"
+              fi
+            done
+            for installer in *.exe *.msi; do sha256sum "$installer"; done > SHA256SUMS-windows.txt
+            sha256sum --check SHA256SUMS-windows.txt
+          )
           gh release create "$RELEASE_TAG" release-files/* \
             --repo "$REPOSITORY" --verify-tag --latest \
             --title "见字·如面 ${version} · 独立模块与统一信笺界面" \

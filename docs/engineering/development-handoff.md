@@ -70,4 +70,4 @@ GitHub 同步源码、锁文件、测试、文档和构建流程。真实面经�
 
 ## 下一次发布
 
-更新 `package.json`／锁文件、Tauri 配置及 Cargo 版本，并提供 `docs/releases/v<version>.md`。按照 `AGENTS.md` 通过 PR 与 CI 合并 `main`，再创建对应的 annotated tag 并推送。标签 CI 通过 Mac 和 Windows 的单元、UI 与打包检查后发布 4 个下载文件及 3 个校验文件。安装包不进入 Git 历史。
+更新 `package.json`／锁文件、Tauri 配置及 Cargo 版本，并提供 `docs/releases/v<version>.md`。按照 `AGENTS.md` 通过 PR 与 CI 合并 `main`，再创建对应的 annotated tag 并推送。标签 CI 通过 Mac 和 Windows 的单元、UI 与打包检查后发布 4 个下载文件及 3 个校验文件。发布前将 Windows 文件名中的空格统一为连字符，并重新生成校验文件，避免 GitHub 上传时自动改名导致校验失败。2.1.0 的 Windows 下载名为 `Interview-Atlas_2.1.0_x64-setup.exe` 和 `Interview-Atlas_2.1.0_x64_en-US.msi`。安装包不进入 Git 历史。
